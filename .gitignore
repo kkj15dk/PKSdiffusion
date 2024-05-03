@@ -3,3 +3,4 @@ results*
 *.fa
 testing*
 denoising-diffusion-pytorch/
+PKSdiffusion/__pycache__/*
