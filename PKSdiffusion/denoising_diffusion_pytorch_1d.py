@@ -25,6 +25,8 @@ from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 from utils import one_hot_decode, quick_loss_plot
 
+import matplotlib.pyplot as plt
+
 # constants
 
 ModelPrediction =  namedtuple('ModelPrediction', ['pred_noise', 'pred_x_start'])
@@ -635,6 +637,7 @@ class GaussianDiffusion1D(nn.Module):
         img = self.unnormalize(img)
         return img
 
+
     @torch.no_grad()
     def sample(self, batch_size = 16):
         seq_length, channels = self.seq_length, self.channels
@@ -669,6 +672,31 @@ class GaussianDiffusion1D(nn.Module):
             extract(self.sqrt_alphas_cumprod, t, x_start.shape) * x_start +
             extract(self.sqrt_one_minus_alphas_cumprod, t, x_start.shape) * noise
         )
+    
+    @torch.no_grad()
+    def get_corrupted_tensors(self, x_start, t_values): # Could be more efficient
+        c,n = x_start.shape
+        device = self.betas.device
+        x_start = x_start.reshape(1,c,n).to(device)
+        for i, t in enumerate(t_values):
+            t = torch.tensor([t]).to(device)
+            corrupted_data = self.q_sample(x_start, t)
+            yield corrupted_data, t
+    
+    @torch.no_grad()
+    def visualize_diffusion(self, x_start, t_values, folder, filename = "diffusion"): # Could be more efficient
+        # Clear the file
+        
+        with open(str(folder) + "/" + filename, "w") as f:
+            pass
+
+        # Write to the file
+        with open(str(folder) + "/" + filename, "a") as f:
+            for tensor, t in self.get_corrupted_tensors(x_start, t_values):
+                tensor = tensor.squeeze()
+                seq_record = SeqRecord(Seq(one_hot_decode(tensor)), id=str(t.item()), description="")
+                SeqIO.write(seq_record, f, "fasta")
+                
 
     def p_losses(self, x_start, t, noise = None):
         b, c, n = x_start.shape

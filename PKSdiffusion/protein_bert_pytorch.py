@@ -256,7 +256,7 @@ class ProteinBERT(nn.Module):
         self,
         *,
         num_tokens = 26,
-        num_annotation = 1, # Forgot the original 8300 something?
+        num_annotation = 1, # Forgot the original. 8300 something?
         dim = 512,
         dim_global = 256,
         depth = 6,

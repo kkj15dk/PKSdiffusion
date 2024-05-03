@@ -29,20 +29,20 @@ model = ProteinBERT(
     wide_conv_dilation = 5,
     attn_heads = 8,
     attn_dim_head = 64,
-    self_condition = False,
+    self_condition = True,
 )
 
 print("Model parameters: ", count_parameters(model))
 
 diffusion = GaussianDiffusion1D(
     model,
-    seq_length = 3592,
+    seq_length = 40,
     # seq_length = 40,
     timesteps = 1000,
     objective = 'pred_noise',
 )
 
-test = False
+test = True
 alignment = False
 
 # aa_file = "clustalo_alignment.aln"
@@ -112,9 +112,10 @@ trainer = Trainer1D(
     gradient_accumulate_every = 2,    # gradient accumulation steps
     ema_decay = 0.995,                # exponential moving average decay
     amp = True,                       # turn on mixed precision
-    # save_and_sample_every=50,
-    results_folder="./testingBERTonPKSs",
+    save_and_sample_every=50,
+    results_folder="./testing",
 )
+diffusion.visualize_diffusion(next(iter(dataset)), [10*i for i in range(100)], trainer.results_folder)
 trainer.train()
 
 # after a lot of training

@@ -93,6 +93,7 @@ trainer = Trainer1D(
     amp = True,                       # turn on mixed precision
     results_folder="./testing"
 )
+diffusion.visualize_diffusion(next(iter(dataset)), [10*i for i in range(100)], trainer.results_folder)
 trainer.train()
 
 # after a lot of training
