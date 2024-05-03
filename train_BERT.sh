@@ -30,4 +30,4 @@ module load python3/3.10.13
 source .venv/bin/activate
 
 # here follow the commands you want to execute
-accelerate launch PKSdiffusion/PKSdiffusion/main.py
+accelerate launch PKSdiffusion/PKSdiffusion/main_BERT.py
