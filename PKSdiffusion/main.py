@@ -87,13 +87,14 @@ trainer = Trainer1D(
     dataset = dataset,
     train_batch_size = 32,
     train_lr = 8e-5,
-    train_num_steps = 100000,         # total training steps
+    train_num_steps = 700000,         # total training steps
     gradient_accumulate_every = 2,    # gradient accumulation steps
     ema_decay = 0.995,                # exponential moving average decay
     amp = True,                       # turn on mixed precision
-    results_folder="./resultsUNET"
+    save_and_sample_every = 10000,
+    results_folder="./resultsUNET",
 )
-trainer.load("50")
+trainer.load("100")
 diffusion.visualize_diffusion(next(iter(dataset)), [10*i for i in range(100)], trainer.results_folder)
 trainer.train()
 

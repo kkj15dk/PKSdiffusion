@@ -684,7 +684,7 @@ class GaussianDiffusion1D(nn.Module):
             yield corrupted_data, t
     
     @torch.no_grad()
-    def visualize_diffusion(self, x_start, t_values, folder, filename = "diffusion"): # Could be more efficient
+    def visualize_diffusion(self, x_start, t_values, folder, filename = "diffusion.fa"): # Could be more efficient
         # Clear the file
         
         with open(str(folder) + "/" + filename, "w") as f:
