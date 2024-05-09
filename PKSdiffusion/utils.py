@@ -177,7 +177,7 @@ def pad_string(string, length, padding_value='-'):
     #     string = string[:length]
     # return string
     if len(string) < length:
-        right_pad = length
+        right_pad = length - len(string)
         string = string + padding_value * right_pad
     else:
         string = string[:length]
