@@ -168,11 +168,17 @@ def pad_string(string, length, padding_value='-'):
     Returns:
         str: The padded string.
     """
+    # if len(string) < length:
+    #     rand_len = random.randint(len(string), length)
+    #     left_pad = rand_len - len(string)
+    #     right_pad = length - rand_len
+    #     string = padding_value * left_pad + string + padding_value * right_pad
+    # else:
+    #     string = string[:length]
+    # return string
     if len(string) < length:
-        rand_len = random.randint(len(string), length)
-        left_pad = rand_len - len(string)
-        right_pad = length - rand_len
-        string = padding_value * left_pad + string + padding_value * right_pad
+        right_pad = length
+        string = string + padding_value * right_pad
     else:
         string = string[:length]
     return string

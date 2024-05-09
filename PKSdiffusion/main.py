@@ -5,21 +5,13 @@ from Bio import SeqIO
 
 set_seed(42) # set the random seed
 
-model = Unet1D(
+model = Unet1D( # This UNET model connat take in odd length inputs...
     dim = 64,
     dim_mults = (1, 2, 4, 8),
     channels = 21
 )
 
 print("Model parameters: ", count_parameters(model))
-
-diffusion = GaussianDiffusion1D(
-    model,
-    seq_length = 3592,
-    # seq_length = 40,
-    timesteps = 1000,
-    objective = 'pred_noise',
-)
 
 test = False
 alignment = False
@@ -40,7 +32,7 @@ if not test:
         seqs = [pad_string(seq, max_len) for seq in seqs] # pad sequences to max length
     elif alignment:
         train_record_aa = [record for record in SeqIO.parse(aa_file, "fasta")]
-        seqs = [str(record.seq) for record in train_record_aa] # SOME OF THESE SEQS HAVE X AS A CHARACTER
+        seqs = [str(record.seq) + "---" for record in train_record_aa] # SOME OF THESE SEQS HAVE X AS A CHARACTER. Adding --- to pad for the length needed to the current UNET architecture, which is doesnt take all input lengths...
         invalid_seqs = [seq for seq in seqs if "X" in seq]
         print("There are " + str(len(invalid_seqs)) + " sequences with X as a character.")
         seqs = [seq for seq in seqs if "X" not in seq]
@@ -72,6 +64,14 @@ if test:
     aa_OHE = one_hot_encode(seqs[0], characters=characters)
     print(one_hot_decode(aa_OHE, characters=characters))
 
+diffusion = GaussianDiffusion1D(
+    model,
+    seq_length = max_len,
+    # seq_length = 40,
+    timesteps = 1000,
+    objective = 'pred_noise',
+)
+
 # Create a Dataset
 # training_seq = torch.stack([one_hot_encode(seq, characters) for seq in seqs])
 # dataset = Dataset1D(training_seq)
@@ -85,16 +85,16 @@ dataset = MyIterDataset(OHEAAgen, seqs, len(seqs), characters)
 trainer = Trainer1D(
     diffusion,
     dataset = dataset,
-    train_batch_size = 32,
+    train_batch_size = 8,
     train_lr = 8e-5,
     train_num_steps = 700000,         # total training steps
     gradient_accumulate_every = 2,    # gradient accumulation steps
     ema_decay = 0.995,                # exponential moving average decay
     amp = True,                       # turn on mixed precision
     save_and_sample_every = 10000,
-    results_folder="./resultsUNET",
+    results_folder="./resultsUNET_endpadding",
 )
-trainer.load("100")
+# trainer.load("10")
 diffusion.visualize_diffusion(next(iter(dataset)), [10*i for i in range(100)], trainer.results_folder)
 trainer.train()
 
