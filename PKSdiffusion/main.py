@@ -15,13 +15,13 @@ print("Model parameters: ", count_parameters(model))
 
 diffusion = GaussianDiffusion1D(
     model,
-    seq_length = 3592,
-    # seq_length = 40,
+    # seq_length = 3592,
+    seq_length = 40,
     timesteps = 1000,
     objective = 'pred_noise',
 )
 
-test = False
+test = True
 alignment = False
 
 # aa_file = "clustalo_alignment.aln"
@@ -87,14 +87,13 @@ trainer = Trainer1D(
     dataset = dataset,
     train_batch_size = 32,
     train_lr = 8e-5,
-    train_num_steps = 700000,         # total training steps
+    train_num_steps = 1000,         # total training steps
     gradient_accumulate_every = 2,    # gradient accumulation steps
     ema_decay = 0.995,                # exponential moving average decay
     amp = True,                       # turn on mixed precision
-    save_and_sample_every = 10000,
-    results_folder="./resultsUNET",
+    save_and_sample_every = 100,
+    results_folder="./resultsUNET_notime",
 )
-trainer.load("100")
 diffusion.visualize_diffusion(next(iter(dataset)), [10*i for i in range(100)], trainer.results_folder)
 trainer.train()
 

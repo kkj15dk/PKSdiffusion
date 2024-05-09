@@ -1,4 +1,3 @@
-import torch
 from denoising_diffusion_pytorch_1d import Unet1D, GaussianDiffusion1D, Trainer1D, Dataset1D
 from protein_bert_pytorch import ProteinBERT
 from utils import *
@@ -112,9 +111,10 @@ trainer = Trainer1D(
     gradient_accumulate_every = 2,    # gradient accumulation steps
     ema_decay = 0.995,                # exponential moving average decay
     amp = True,                       # turn on mixed precision
-    # save_and_sample_every=50,
-    results_folder="./resultsBERT",
+    save_and_sample_every=100,
+    results_folder="./resultsBERT_notime",
 )
+trainer.load("10")
 diffusion.visualize_diffusion(next(iter(dataset)), [10*i for i in range(100)], trainer.results_folder)
 trainer.train()
 

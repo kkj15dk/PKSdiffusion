@@ -358,6 +358,7 @@ class Unet1D(nn.Module):
         r = x.clone()
 
         t = self.time_mlp(time)
+        # t = None
 
         h = []
 

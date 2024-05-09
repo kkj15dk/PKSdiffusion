@@ -143,7 +143,8 @@ class Layer(nn.Module):
         attn_qk_activation = nn.Tanh(),
         local_to_global_attn = False,
         local_self_attn = False,
-        glu_conv = False
+        glu_conv = False,
+        time_dim = None,
     ):
         super().__init__()
 
@@ -191,6 +192,12 @@ class Layer(nn.Module):
             nn.LayerNorm(dim)
         )
 
+        # ResNetBlock
+        self.mlp = nn.Sequential(
+            nn.SiLU(),
+            nn.Linear(time_dim, dim * 2)
+        ) if exists(time_dim) else None
+
         self.global_attend_local = CrossAttention(dim = dim_global, dim_out = dim_global, dim_keys = dim, heads = attn_heads, dim_head = attn_dim_head, qk_activation = attn_qk_activation)
 
         self.global_dense = nn.Sequential(
@@ -208,7 +215,7 @@ class Layer(nn.Module):
             nn.LayerNorm(dim_global),
         )
 
-    def forward(self, tokens, annotation, mask = None):
+    def forward(self, tokens, annotation, mask = None, time_emb = None):
         if self.local_to_global_attn:
             global_info = self.extract_global_info(tokens, annotation, mask = mask)
         else:
@@ -218,8 +225,25 @@ class Layer(nn.Module):
 
         global_linear_attn = self.seq_self_attn(tokens) if exists(self.seq_self_attn) else 0
 
-        conv_input = rearrange(tokens, 'b n d -> b d n') # I think this was needed in the original model becasue they used nn.Embedding, not nn.Conv1d for token embedding
 
+        ###
+        # From ResNetBlock
+        scale_shift = None
+        if exists(self.mlp) and exists(time_emb):
+            time_emb = self.mlp(time_emb)
+            time_emb = rearrange(time_emb, 'b c -> b 1 c')
+            scale_shift = time_emb.chunk(2, dim = 2)
+
+        # scale_shift = None # For testing purposes
+        # From Block
+        if exists(scale_shift):
+            scale, shift = scale_shift
+            # print(scale, shift)
+            tokens = tokens * (scale + 1) + shift
+        ###
+
+        conv_input = rearrange(tokens, 'b n d -> b d n') # I think this was needed in the original model becasue they used nn.Embedding, not nn.Conv1d for token embedding
+        
         if exists(mask):
             conv_input_mask = rearrange(mask, 'b n -> b () n')
             conv_input = conv_input.masked_fill(~conv_input_mask, 0.)
@@ -289,10 +313,13 @@ class ProteinBERT(nn.Module):
         # self.token_emb = nn.Conv1d(input_channels, dim, 7, padding = 3) # From the U-NET model
         self.token_emb = nn.Conv1d(input_channels, dim, 1, padding = 0)
 
+        # time embeddings?
+        time_dim = dim * 4
+
         self.num_global_tokens = num_global_tokens
         self.to_global_emb = nn.Linear(num_annotation, num_global_tokens * dim_global)
 
-        self.layers = nn.ModuleList([Layer(dim = dim, dim_global = dim_global, narrow_conv_kernel = narrow_conv_kernel, wide_conv_dilation = wide_conv_dilation, wide_conv_kernel = wide_conv_kernel, attn_qk_activation = attn_qk_activation, local_to_global_attn = local_to_global_attn, local_self_attn = local_self_attn, glu_conv = glu_conv) for layer in range(depth)])
+        self.layers = nn.ModuleList([Layer(dim = dim, dim_global = dim_global, narrow_conv_kernel = narrow_conv_kernel, wide_conv_dilation = wide_conv_dilation, wide_conv_kernel = wide_conv_kernel, attn_qk_activation = attn_qk_activation, local_to_global_attn = local_to_global_attn, local_self_attn = local_self_attn, glu_conv = glu_conv, time_dim = time_dim) for layer in range(depth)])
 
         self.to_token_logits = nn.Linear(dim, num_tokens)
 
@@ -300,10 +327,6 @@ class ProteinBERT(nn.Module):
             Reduce('b n d -> b d', 'mean'),
             nn.Linear(dim_global, num_annotation)
         )
-
-        # time embeddings
-
-        time_dim = dim * 4
 
         self.random_or_learned_sinusoidal_cond = learned_sinusoidal_cond or random_fourier_features
 
@@ -321,11 +344,11 @@ class ProteinBERT(nn.Module):
             nn.Linear(time_dim, time_dim)
         )
 
-        # ResNetBlock
-        self.mlp = nn.Sequential(
-            nn.SiLU(),
-            nn.Linear(time_dim, dim * 2)
-        ) if exists(time_dim) else None
+        # # ResNetBlock
+        # self.mlp = nn.Sequential(
+        #     nn.SiLU(),
+        #     nn.Linear(time_dim, dim * 2)
+        # ) if exists(time_dim) else None
 
     # def forward(self, seq, annotation, mask = None):
 
@@ -357,22 +380,22 @@ class ProteinBERT(nn.Module):
         ###
 
         #### Time embeddings, WIP, Base on U-Net time embedding, which is probably totally wrong
-        # time_emb is t
-        time_emb = self.time_mlp(time)
+        t = self.time_mlp(time)
+        t = None
 
-        # From ResNetBlock
-        scale_shift = None
-        if exists(self.mlp) and exists(time_emb):
-            time_emb = self.mlp(time_emb)
-            time_emb = rearrange(time_emb, 'b c -> b c 1')
-            scale_shift = time_emb.chunk(2, dim = 1)
+        # # From ResNetBlock
+        # scale_shift = None
+        # if exists(self.mlp) and exists(time_emb):
+        #     time_emb = self.mlp(time_emb)
+        #     time_emb = rearrange(time_emb, 'b c -> b c 1')
+        #     scale_shift = time_emb.chunk(2, dim = 1)
 
-        # scale_shift = None # For testing purposes
-        # From Block
-        if exists(scale_shift):
-            scale, shift = scale_shift
-            # print(scale, shift)
-            tokens = tokens * (scale + 1) + shift
+        # # scale_shift = None # For testing purposes
+        # # From Block
+        # if exists(scale_shift):
+        #     scale, shift = scale_shift
+        #     # print(scale, shift)
+        #     tokens = tokens * (scale + 1) + shift
         tokens = rearrange(tokens, 'b n d -> b d n') # Have to add this to make output same shape as with nn.Embedding
         #### Time embeddings, WIP
 
@@ -381,7 +404,7 @@ class ProteinBERT(nn.Module):
         annotation = rearrange(annotation, 'b (n d) -> b n d', n = self.num_global_tokens) # This seems a bit weirds, but okay, KKJ
 
         for layer in self.layers:
-            tokens, annotation = layer(tokens, annotation, mask = mask)
+            tokens, annotation = layer(tokens, annotation, mask = mask, time_emb = t)
         tokens = self.to_token_logits(tokens)
         tokens = rearrange(tokens, 'b n d -> b d n') # Have to add this to make output same shape as with nn.Embedding 
         
