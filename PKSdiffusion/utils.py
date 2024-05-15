@@ -99,6 +99,7 @@ class MyIterDataset(IterableDataset):
 def OHEAAgen(seqs, characters="ACDEFGHIKLMNPQRSTVWY-"):
     # yield from record_gen
     for seq in seqs:
+        seq = pad_string(seq, length=40)
         seq = one_hot_encode(seq, characters)
 
         yield seq
@@ -168,20 +169,20 @@ def pad_string(string, length, padding_value='-'):
     Returns:
         str: The padded string.
     """
-    # if len(string) < length:
-    #     rand_len = random.randint(len(string), length)
-    #     left_pad = rand_len - len(string)
-    #     right_pad = length - rand_len
-    #     string = padding_value * left_pad + string + padding_value * right_pad
-    # else:
-    #     string = string[:length]
-    # return string
     if len(string) < length:
-        right_pad = length - len(string)
-        string = string + padding_value * right_pad
+        rand_len = random.randint(len(string), length)
+        left_pad = rand_len - len(string)
+        right_pad = length - rand_len
+        string = padding_value * left_pad + string + padding_value * right_pad
     else:
         string = string[:length]
     return string
+    # if len(string) < length:
+    #     right_pad = length - len(string)
+    #     string = string + padding_value * right_pad
+    # else:
+    #     string = string[:length]
+    # return string
 
 # Set a random seed in a bunch of different places
 def set_seed(seed: int = 42) -> None:
