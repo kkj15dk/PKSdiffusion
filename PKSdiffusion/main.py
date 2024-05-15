@@ -30,7 +30,7 @@ if not test:
         random.shuffle(seqs) # shuffle sequences
         characters = "ACDEFGHIKLMNPQRSTVWY-"
         max_len = max([len(seq) for seq in seqs])
-        seqs = [pad_string(seq, max_len) for seq in seqs] # pad sequences to max length
+        # seqs = [pad_string(seq, max_len) for seq in seqs] # pad sequences to max length Should be done in dataloader/collate_fn
     elif alignment:
         train_record_aa = [record for record in SeqIO.parse(aa_file, "fasta")]
         seqs = [str(record.seq) + "---" for record in train_record_aa] # SOME OF THESE SEQS HAVE X AS A CHARACTER. Adding --- to pad for the length needed to the current UNET architecture, which is doesnt take all input lengths...
@@ -58,7 +58,7 @@ if test:
         characters = "ACDEFGHIKLMNPQRSTVWY-" # "ACDEFGHIKLMNPQRSTVWY-<>"
         # seqs = [ ">" + seq + "<" for seq in seqs]
         max_len = max([len(seq) for seq in seqs])
-        seqs = [pad_string(seq, max_len) for seq in seqs]
+        # seqs = [pad_string(seq, max_len) for seq in seqs]
     print("Test of one_hot_encode and one_hot_decode:")
     print("Max length sequence is: " + str(max_len))
     print(seqs[0])
@@ -92,8 +92,13 @@ trainer = Trainer1D(
     gradient_accumulate_every = 2,    # gradient accumulation steps
     ema_decay = 0.995,                # exponential moving average decay
     amp = True,                       # turn on mixed precision
+<<<<<<< HEAD
     save_and_sample_every = 100000,
     results_folder="./resultsUNET_endpad_128dim",
+=======
+    save_and_sample_every = 10000,
+    results_folder="./test",
+>>>>>>> a8eaba6809187ee16ad5c5ef37ce5420d259c5ef
 )
 # trainer.load("88")
 diffusion.visualize_diffusion(next(iter(dataset)), [10*i for i in range(100)], trainer.results_folder)
