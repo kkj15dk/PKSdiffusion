@@ -13,7 +13,7 @@ model = Unet1D( # This UNET model connat take in odd length inputs...
 
 print("Model parameters: ", count_parameters(model))
 
-test = True
+test = False
 alignment = False
 
 # aa_file = "clustalo_alignment.aln"
@@ -87,7 +87,7 @@ trainer = Trainer1D(
     dataset = dataset,
     train_batch_size = 8,
     train_lr = 8e-5,
-    train_num_steps = 1000,         # total training steps
+    train_num_steps = 700000,         # total training steps
     gradient_accumulate_every = 2,    # gradient accumulation steps
     ema_decay = 0.995,                # exponential moving average decay
     amp = True,                       # turn on mixed precision
