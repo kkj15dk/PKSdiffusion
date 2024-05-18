@@ -13,7 +13,7 @@ model = Unet1D( # This UNET model connat take in odd length inputs...
 
 print("Model parameters: ", count_parameters(model))
 
-test = False
+test = True
 alignment = False
 
 # aa_file = "clustalo_alignment.aln"
@@ -70,6 +70,10 @@ diffusion = GaussianDiffusion1D(
     # seq_length = 40,
     timesteps = 1000,
     objective = 'pred_noise',
+    # objective = 'pred_x0', 
+    # objective = 'pred_v',
+    # beta_schedule = 'cosine',
+    beta_schedule = 'linear',
 )
 
 # Create a Dataset
@@ -87,14 +91,14 @@ trainer = Trainer1D(
     dataset = dataset,
     train_batch_size = 8,
     train_lr = 8e-5,
-    train_num_steps = 700000,         # total training steps
+    train_num_steps = 7000,         # total training steps
     gradient_accumulate_every = 2,    # gradient accumulation steps
     ema_decay = 0.995,                # exponential moving average decay
     amp = True,                       # turn on mixed precision
-    save_and_sample_every = 10000,
-    results_folder="./test",
+    save_and_sample_every = 1000,
+    results_folder="./resultsTEST_noise_linear_0-1",
 )
-# trainer.load("10")
+# trainer.load("5")
 diffusion.visualize_diffusion(next(iter(dataset)), [10*i for i in range(100)], trainer.results_folder)
 trainer.train()
 

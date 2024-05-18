@@ -101,6 +101,7 @@ def OHEAAgen(seqs, characters="ACDEFGHIKLMNPQRSTVWY-"):
     for seq in seqs:
         seq = pad_string(seq, length=40)
         seq = one_hot_encode(seq, characters)
+        # seq = 2*seq - 1 # Go from 0:1 to -1:1
 
         yield seq
 
