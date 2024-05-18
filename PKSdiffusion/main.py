@@ -6,7 +6,8 @@ from Bio import SeqIO
 set_seed(42) # set the random seed
 
 model = Unet1D( # This UNET model connat take in odd length inputs...
-    dim = 64,
+    # dim = 64,
+    dim = 128,
     dim_mults = (1, 2, 4, 8),
     channels = 21
 )
@@ -89,16 +90,21 @@ dataset = MyIterDataset(OHEAAgen, seqs, len(seqs), characters)
 trainer = Trainer1D(
     diffusion,
     dataset = dataset,
-    train_batch_size = 8,
+    train_batch_size = 32,
     train_lr = 8e-5,
-    train_num_steps = 7000,         # total training steps
+    train_num_steps = 1000000,         # total training steps
     gradient_accumulate_every = 2,    # gradient accumulation steps
     ema_decay = 0.995,                # exponential moving average decay
     amp = True,                       # turn on mixed precision
-    save_and_sample_every = 1000,
-    results_folder="./resultsTEST_noise_linear_0-1",
+<<<<<<< HEAD
+    save_and_sample_every = 100000,
+    results_folder="./resultsUNET_endpad_128dim",
+=======
+    save_and_sample_every = 10000,
+    results_folder="./test",
+>>>>>>> a8eaba6809187ee16ad5c5ef37ce5420d259c5ef
 )
-# trainer.load("5")
+# trainer.load("88")
 diffusion.visualize_diffusion(next(iter(dataset)), [10*i for i in range(100)], trainer.results_folder)
 trainer.train()
 
