@@ -14,7 +14,7 @@ model = Unet1D( # This UNET model connat take in odd length inputs...
 
 print("Model parameters: ", count_parameters(model))
 
-test = False
+test = True
 alignment = False
 
 # aa_file = "clustalo_alignment.aln"
@@ -71,6 +71,10 @@ diffusion = GaussianDiffusion1D(
     # seq_length = 40,
     timesteps = 1000,
     objective = 'pred_noise',
+    # objective = 'pred_x0', 
+    # objective = 'pred_v',
+    # beta_schedule = 'cosine',
+    beta_schedule = 'linear',
 )
 
 # Create a Dataset
