@@ -7,9 +7,7 @@ seed = 42
 set_seed(seed) # set the random seed
 print("seed set as " + str(seed))
 
-model = Unet1D( # This UNET model connat take in odd length inputs...
-    dim = 64,
-    # dim = 128,
+model = Unet1D( # This UNET model cann0t take in odd length inputs...
     dim = 64,
     # dim = 128,
     dim_mults = (1, 2, 4, 8),
@@ -27,13 +25,14 @@ aa_file = "NRPSs_mid-0-1800.fa"
 if not test:
     if not alignment:
         train_record_aa = [record for record in SeqIO.parse(aa_file, "fasta")]
-        seqs = [str(record.seq) for record in train_record_aa] # SOME OF THESE SEQS HAVE X AS A CHARACTER
-        invalid_seqs = [seq for seq in seqs if "X" in seq]
-        print("There are " + str(len(invalid_seqs)) + " sequences with X as a character. These will be removed from the training set.")
-        seqs = [seq for seq in seqs if "X" not in seq]
-        seqs = list(set(seqs)) # remove duplicates
-        random.shuffle(seqs) # shuffle sequences
         characters = "ACDEFGHIKLMNPQRSTVWY-"
+        seqs = [str(record.seq) for record in train_record_aa] # SOME OF THESE SEQS HAVE UNIMPLEMENTED AA's AS A CHARACTERS
+        print("There are " + str(len(seqs)) + " sequences in the daatset.")
+        seqs = [seq for seq in seqs if set(seq).issubset(characters)]
+        print("There are " + str(len(seqs)) + " sequences when removing unimplemented amino acids.")
+        seqs = list(set(seqs)) # remove duplicates
+        print("There are " + str(len(seqs)) + " sequences when removing duplicates. This is the final dataset.")
+        random.shuffle(seqs) # shuffle sequences
         max_len = max([len(seq) for seq in seqs])
         # seqs = [pad_string(seq, max_len) for seq in seqs] # pad sequences to max length Should be done in dataloader/collate_fn
     elif alignment:
@@ -105,7 +104,7 @@ trainer = Trainer1D(
     results_folder="./resultsUNET_NRPS_mid_0-1800_v_cosine",
 )
 # trainer.load("11")
-diffusion.visualize_diffusion(next(iter(dataset)), [10*i for i in range(100)], trainer.results_folder)
+diffusion.visualize_diffusion(next(iter(dataset)), [10*i for i in range(100)], trainer.results_folder, gif = False)
 trainer.train()
 
 # after a lot of training
