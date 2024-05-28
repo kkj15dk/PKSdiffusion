@@ -8,6 +8,8 @@ set_seed(42) # set the random seed
 model = Unet1D( # This UNET model connat take in odd length inputs...
     dim = 64,
     # dim = 128,
+    dim = 64,
+    # dim = 128,
     dim_mults = (1, 2, 4, 8),
     channels = 21
 )
