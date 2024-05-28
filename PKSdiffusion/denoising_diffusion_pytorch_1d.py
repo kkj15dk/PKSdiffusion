@@ -31,6 +31,7 @@ import pandas as pd
 import logomaker
 import imageio
 import os
+# from concurrent.futures import ProcessPoolExecutor
 
 # constants
 
@@ -689,53 +690,47 @@ class GaussianDiffusion1D(nn.Module):
             corrupted_data = self.q_sample(x_start, t)
             yield corrupted_data, t
     
-    @torch.no_grad()
-    def visualize_diffusion(self, x_start, t_values, folder, filename = "diffusion.fa"): # Could be more efficient
-        # Clear the file
-        tensor_list = []
-         # Directory to save PNGs
-        png_dir = str(folder) + "/" + "sequence_logo_pngs"
-        output_gif_path = str(folder) + "/" + "diffusion.gif"
-        os.makedirs(png_dir, exist_ok=True)
-        png_files = []
-
-        with open(str(folder) + "/" + filename, "w") as f:
-            pass
-
-        # Write to the file
-        with open(str(folder) + "/" + filename, "a") as f:
-            for tensor, t in self.get_noised_tensors(x_start, t_values):
-                tensor = tensor.squeeze()
-                tensor_list.append(tensor)
-                seq_record = SeqRecord(Seq(one_hot_decode(tensor)), id=str(t.item()), description="")
-                SeqIO.write(seq_record, f, "fasta")
-
+    @staticmethod
+    def save_logo_plot(tensor, idx, png_dir, positions_per_line, width = 100):
         amino_acids = ['A', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'K', 'L', 'M', 'N', 'P', 'Q', 'R', 'S', 'T', 'V', 'W', 'Y', '-']
+
+        num_positions = tensor.shape[1]
+        num_lines = (num_positions + positions_per_line - 1) // positions_per_line
+        # print(f"Number of lines: {num_lines}")
         
-        for idx, tensor in enumerate(tensor_list):
-            # Check if the tensor has the correct shape [20, 3592]
-            tensor = tensor.cpu().numpy()
-            # Convert tensor to a DataFrame suitable for logomaker
-            df = pd.DataFrame(tensor.T, columns=amino_acids)
+        fig, axes = plt.subplots(num_lines, 1, figsize=(width, 5 * num_lines), squeeze=False)
+        
+        for line in range(num_lines):
+            start = line * positions_per_line
+            end = min(start + positions_per_line, num_positions)
+            df = pd.DataFrame(tensor.T[start:end], columns=amino_acids)
             
-            # Create the sequence logo plot
-            plt.figure(figsize=(15, 5))
-            logo = logomaker.Logo(df)
+            logo = logomaker.Logo(df, ax=axes[line, 0])
             logo.style_spines(visible=False)
             logo.style_spines(spines=['left', 'bottom'], visible=True)
             logo.ax.set_ylabel("Probability")
             logo.ax.set_xlabel("Position")
-            plt.title(f"Sequence Logo for Tensor {idx + 1}")
-            # Set fixed Y-axis limits
-            plt.ylim(-15, 15)
+            logo.ax.set_ylim(-20, 20)
 
-            # Save the plot as a PNG file
-            png_path = os.path.join(png_dir, f"sequence_logo_{idx + 1}.png")
-            plt.savefig(png_path)
-            png_files.append(png_path)
-            plt.close(logo.fig)
-            plt.close()
-            plt.clf()
+        plt.tight_layout()
+        plt.title(f"Sequence Logo for Tensor {idx + 1}")
+
+        # Save the figure as a PNG file
+        png_path = os.path.join(png_dir, f"sequence_logo_{idx + 1}.png")
+        plt.savefig(png_path)
+        plt.close(logo.fig)
+        
+        return png_path
+
+    @torch.no_grad()
+    def plot_sequence_logo_and_create_gif(self, tensor_list, output_gif_path="sequence_logos.gif", png_dir = "sequence_logo_pngs", positions_per_line=100):
+        
+        os.makedirs(png_dir, exist_ok=True)
+        
+        png_files = []
+        
+        for idx, tensor in enumerate(tensor_list):
+            png_files.append(self.save_logo_plot(tensor, idx, png_dir, positions_per_line))
 
         # Create a GIF from the saved PNG files
         with imageio.get_writer(output_gif_path, mode='I', duration=0.5) as writer:
@@ -744,6 +739,28 @@ class GaussianDiffusion1D(nn.Module):
                 writer.append_data(image)
 
         print(f"GIF saved at {output_gif_path}")
+
+    @torch.no_grad()
+    def visualize_diffusion(self, x_start, t_values, folder, filename = "diffusion.fa", gif = False): # Could be more efficient
+
+        png_dir = str(folder) + "/" + "sequence_logo_pngs"
+        output_gif_path = str(folder) + "/" + "sequence_logos.gif"
+
+        tensor_list = []
+        # Clear the file
+        with open(str(folder) + "/" + filename, "w") as f:
+            pass
+
+        # Write to the file
+        with open(str(folder) + "/" + filename, "a") as f:
+            for tensor, t in self.get_noised_tensors(x_start, t_values):
+                tensor = tensor.squeeze()
+                seq_record = SeqRecord(Seq(one_hot_decode(tensor)), id=str(t.item()), description="")
+                SeqIO.write(seq_record, f, "fasta")
+                tensor_list.append(tensor.cpu().numpy())
+
+        if gif:
+            self.plot_sequence_logo_and_create_gif(tensor_list, positions_per_line=500, output_gif_path=output_gif_path, png_dir=png_dir)
                 
 
     def p_losses(self, x_start, t, noise = None):

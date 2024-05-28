@@ -95,7 +95,7 @@ if test:
 # Create a Dataset
 # training_seq = torch.stack([one_hot_encode(seq, characters) for seq in seqs])
 # dataset = Dataset1D(training_seq)
-dataset = MyIterDataset(OHEAAgen, seqs, len(seqs), characters)
+dataset = MyIterDataset(OHEAAgen, seqs, len(seqs), max_len, characters)
 
 # loss = diffusion(training_seq)
 # loss.backward()

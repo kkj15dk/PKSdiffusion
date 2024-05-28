@@ -80,29 +80,31 @@ def one_hot_decode(tensor, characters = "ACDEFGHIKLMNPQRSTVWY-"):
     return "".join(seq)
 
 class MyIterDataset(IterableDataset):
-    def __init__(self, generator_function, seqs, len, batch_size, characters="ACDEFGHIKLMNPQRSTVWY-"):
+    def __init__(self, generator_function, seqs, len, characters="ACDEFGHIKLMNPQRSTVWY-", max_len = 40):
         self.generator_function = generator_function
         self.seqs = seqs
-        self.batch_size = batch_size
         self.len = len
         self.characters = characters
+        self.length = max_len
 
     def __iter__(self):
         # Create a generator object
-        generator = self.generator_function(self.seqs, self.characters)
+        generator = self.generator_function(self.seqs, self.characters, self.length)
         for item in generator:
             yield item.float()
     
     def __len__(self):
         return self.len
 
-def OHEAAgen(seqs, characters="ACDEFGHIKLMNPQRSTVWY-"):
+def OHEAAgen(seqs, characters="ACDEFGHIKLMNPQRSTVWY-", length=40):
     # yield from record_gen
     for seq in seqs:
         # seq = pad_string(seq, length=3592)
         seq = pad_string(seq, length=1800)
+        seq = pad_string(seq, length=length)
+        # seq = pad_string(seq, length=3592)
         seq = one_hot_encode(seq, characters)
-        # seq = 2*seq - 1 # Go from 0:1 to -1:1
+        seq = 2*seq - 1 # Go from 0:1 to -1:1
 
         yield seq
 

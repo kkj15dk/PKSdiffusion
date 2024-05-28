@@ -10,6 +10,8 @@ print("seed set as " + str(seed))
 model = Unet1D( # This UNET model connat take in odd length inputs...
     dim = 64,
     # dim = 128,
+    dim = 64,
+    # dim = 128,
     dim_mults = (1, 2, 4, 8),
     channels = 21
 )
@@ -74,7 +76,11 @@ diffusion = GaussianDiffusion1D(
     # seq_length = 40,
     timesteps = 1000,
     # objective = 'pred_noise',
+    # objective = 'pred_noise',
     # objective = 'pred_x0', 
+    objective = 'pred_v',
+    beta_schedule = 'cosine',
+    # beta_schedule = 'linear',
     objective = 'pred_v',
     beta_schedule = 'cosine',
     # beta_schedule = 'linear',
@@ -83,7 +89,7 @@ diffusion = GaussianDiffusion1D(
 # Create a Dataset
 # training_seq = torch.stack([one_hot_encode(seq, characters) for seq in seqs])
 # dataset = Dataset1D(training_seq)
-dataset = MyIterDataset(OHEAAgen, seqs, len(seqs), characters)
+dataset = MyIterDataset(OHEAAgen, seqs, len(seqs), characters, max_len)
 
 # loss = diffusion(training_seq)
 # loss.backward()
