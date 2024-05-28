@@ -6,8 +6,8 @@ from Bio import SeqIO
 set_seed(42) # set the random seed
 
 model = Unet1D( # This UNET model connat take in odd length inputs...
-    # dim = 64,
-    dim = 128,
+    dim = 64,
+    # dim = 128,
     dim_mults = (1, 2, 4, 8),
     channels = 21
 )
@@ -70,17 +70,17 @@ diffusion = GaussianDiffusion1D(
     seq_length = max_len,
     # seq_length = 40,
     timesteps = 1000,
-    objective = 'pred_noise',
+    # objective = 'pred_noise',
     # objective = 'pred_x0', 
-    # objective = 'pred_v',
-    # beta_schedule = 'cosine',
-    beta_schedule = 'linear',
+    objective = 'pred_v',
+    beta_schedule = 'cosine',
+    # beta_schedule = 'linear',
 )
 
 # Create a Dataset
 # training_seq = torch.stack([one_hot_encode(seq, characters) for seq in seqs])
 # dataset = Dataset1D(training_seq)
-dataset = MyIterDataset(OHEAAgen, seqs, len(seqs), characters)
+dataset = MyIterDataset(OHEAAgen, seqs, len(seqs), characters, max_len)
 
 # loss = diffusion(training_seq)
 # loss.backward()
@@ -92,20 +92,15 @@ trainer = Trainer1D(
     dataset = dataset,
     train_batch_size = 32,
     train_lr = 8e-5,
-    train_num_steps = 1000000,         # total training steps
+    train_num_steps = 7000,         # total training steps
     gradient_accumulate_every = 2,    # gradient accumulation steps
     ema_decay = 0.995,                # exponential moving average decay
     amp = True,                       # turn on mixed precision
-<<<<<<< HEAD
-    save_and_sample_every = 100000,
-    results_folder="./resultsUNET_endpad_128dim",
-=======
-    save_and_sample_every = 10000,
-    results_folder="./test",
->>>>>>> a8eaba6809187ee16ad5c5ef37ce5420d259c5ef
+    save_and_sample_every = 1000,
+    results_folder="./resultsTEST",
 )
 # trainer.load("88")
-diffusion.visualize_diffusion(next(iter(dataset)), [10*i for i in range(100)], trainer.results_folder)
+diffusion.visualize_diffusion(next(iter(dataset)), [10*i for i in range(100)], trainer.results_folder, gif = False)
 trainer.train()
 
 # after a lot of training
