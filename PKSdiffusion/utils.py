@@ -100,7 +100,7 @@ def OHEAAgen(seqs, characters="ACDEFGHIKLMNPQRSTVWY-", length=40):
     # yield from record_gen
     for seq in seqs:
         # seq = pad_string(seq, length=3592)
-        seq = pad_string(seq, length=1800)
+        # seq = pad_string(seq, length=1800)
         seq = pad_string(seq, length=length)
         # seq = pad_string(seq, length=3592)
         seq = one_hot_encode(seq, characters)
