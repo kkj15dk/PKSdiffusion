@@ -101,7 +101,7 @@ trainer = Trainer1D(
     ema_decay = 0.995,                # exponential moving average decay
     amp = True,                       # turn on mixed precision
     save_and_sample_every = 100000,
-    results_folder="./resultsUNET_NRPS_mid_0-1800_v_cosine",
+    results_folder="./resultsUNET_NRPS_mid_0-1800_v_cosine_0to1",
 )
 # trainer.load("11")
 diffusion.visualize_diffusion(next(iter(dataset)), [10*i for i in range(100)], trainer.results_folder, gif = False)
