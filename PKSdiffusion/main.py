@@ -7,11 +7,14 @@ seed = 41
 set_seed(seed) # set the random seed
 print("seed set as " + str(seed))
 
-model = Unet1D( # This UNET model cann0t take in odd length inputs...
+model = Unet1D( # This UNET model cannot take in odd length inputs...
     dim = 64,
     # dim = 128,
     dim_mults = (1, 2, 4, 8),
-    channels = 20
+    channels = 20,
+    learned_sinusoidal_cond=True,
+    random_fourier_features=True,
+    # learned_variance=True, # Makes it crash
 )
 
 print("Model parameters: ", count_parameters(model))
@@ -79,6 +82,7 @@ diffusion = GaussianDiffusion1D(
     objective = 'pred_v',
     beta_schedule = 'cosine',
     # beta_schedule = 'linear',
+    auto_normalize=True,
 )
 
 # Create a Dataset
@@ -96,20 +100,23 @@ trainer = Trainer1D(
     dataset = dataset,
     train_batch_size = 32,
     train_lr = 1e-5,
-    train_num_steps = 70000,         # total training steps
+    train_num_steps = 1000000,         # total training steps
     gradient_accumulate_every = 2,    # gradient accumulation steps
     ema_decay = 0.995,                # exponential moving average decay
     amp = True,                       # turn on mixed precision
-    save_and_sample_every = 1000,
-    results_folder="./resultsTEST_1",
+    save_and_sample_every = 10000,
+    results_folder="./resultsTEST_NRPS_3",
 )
 # trainer.load("2")
-diffusion.visualize_diffusion(next(iter(dataset)), [10*i for i in range(100)], trainer.results_folder, gif = False)
+diffusion.visualize_diffusion(next(iter(dataset)), [100*i for i in range(10)], trainer.results_folder, gif = False)
 trainer.train()
 
 # after a lot of training
 
-sampled_seq = diffusion.sample(batch_size = 10)
-print(sampled_seq.shape)
-for i in range(sampled_seq.shape[0]):
-    print(one_hot_decode(sampled_seq[i], characters=characters))
+sampled_seqs = diffusion.sample(batch_size = 10)
+for i, seq in enumerate(sampled_seqs):
+    diffusion.save_logo_plot(seq.cpu().numpy(), i, trainer.results_folder, 100)
+print(sampled_seqs.shape)
+seqs = one_hot_decode(sampled_seqs, characters=characters)
+for seq in seqs:
+    print(seq)

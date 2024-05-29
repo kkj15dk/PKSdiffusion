@@ -74,25 +74,40 @@ def one_hot_encode(seq, characters = "ACDEFGHIKLMNPQRSTVWY-", max_len = 40):
 
     return tensor
 
-def one_hot_decode(tensor, characters = "ACDEFGHIKLMNPQRSTVWY-", cutoff = 0.5):
+def one_hot_decode(tensor, characters = "ACDEFGHIKLMNPQRSTVWY", cutoff = 0.5): # cutoff = 0.5 means all classes are negative in the model output before normalisation from -1:1 to 0:1. This will be interpreted as padding.
     """
     Given a one-hot encoded tensor and a string of characters, return the decoded sequence based on the characters provided.
     """
+    # If the tensor is not a batch, add an extra dimension to make it a batch of size 1
+    if len(tensor.shape) == 2:
+        tensor = tensor.unsqueeze(0)
+    
     # Dictionary returning nucleotides or amino acids for each class index
     dictionary = {i: x for i, x in enumerate(characters)}
 
     # Create sequence from class indices
-    seq = []
-    for i in range(tensor.shape[1]):
-        if torch.all(tensor[:, i] < cutoff):
-            seq.append('-')
-        else:
-            seq.append(dictionary[torch.argmax(tensor[:, i]).item()])
+    # Find the indices of the maximum values along the last dimension
+    indices = torch.argmax(tensor, dim=-2)
 
-    return "".join(seq)
+    # Create a mask where all values in the tensor are less than the cutoff
+    mask = torch.all(tensor < cutoff, dim=-2)
+
+    # Replace the indices in the mask with the length of the characters (which is not a valid index)
+    indices = torch.where(mask, torch.tensor(len(characters), device=tensor.device), indices)
+
+    # Convert the tensor of indices to a list of indices
+    indices = indices.tolist()
+
+    # Use the dictionary to map the indices to characters
+    seq = [[dictionary.get(idx, '-') for idx in batch] for batch in indices]
+
+    # Join the characters to form the sequences
+    seq = ["".join(batch) for batch in seq]
+
+    return seq
 
 class MyIterDataset(IterableDataset):
-    def __init__(self, generator_function, seqs, len, characters="ACDEFGHIKLMNPQRSTVWY-", max_len = 40):
+    def __init__(self, generator_function, seqs, len, characters="ACDEFGHIKLMNPQRSTVWY", max_len = 40):
         self.generator_function = generator_function
         self.seqs = seqs
         self.len = len
@@ -116,7 +131,6 @@ def OHEAAgen(seqs, characters="ACDEFGHIKLMNPQRSTVWY-", length=40):
         # seq = pad_string(seq, length=length)
         # seq = pad_string(seq, length=3592)
         seq = one_hot_encode(seq, characters, length)
-        # seq = 2*seq - 1 # Go from 0:1 to -1:1
 
         yield seq
 
