@@ -7,10 +7,9 @@ certifi==2024.2.2
 charset-normalizer==3.3.2
 contourpy==1.2.1
 cycler==0.12.1
-distlib==0.3.7
 einops==0.8.0
 ema-pytorch==0.4.5
-filelock==3.13.1
+filelock==3.14.0
 fonttools==4.51.0
 fsspec==2024.3.1
 gprofiler-official==1.0.0
@@ -41,7 +40,7 @@ nvidia-nvtx-cu12==12.1.105
 packaging==24.0
 pandas==2.2.2
 pillow==10.3.0
-platformdirs==4.1.0
+platformdirs==4.2.1
 pooch==1.8.1
 psutil==5.9.8
 pyparsing==3.1.2
@@ -58,4 +57,3 @@ triton==2.3.0
 typing_extensions==4.11.0
 tzdata==2024.1
 urllib3==2.2.1
-virtualenv==20.25.0
