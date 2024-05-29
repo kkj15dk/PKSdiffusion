@@ -43,12 +43,12 @@ def quick_loss_plot(train_data, label, filename, loss_type="Loss"):
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
-def one_hot_encode(seq, characters = "ACDEFGHIKLMNPQRSTVWY-"):
+def one_hot_encode(seq, characters = "ACDEFGHIKLMNPQRSTVWY-", max_len = 40):
     """
     Given an AA sequence and a string of characters, return its one-hot encoding based on the characters provided.
     """
-    # Make sure seq has only allowed bases
-    allowed = set(characters)
+    # Make sure seq has only allowed bases, and the padding character. Holy fuck im making this convoluted, whoops
+    allowed = set(characters + "-")
 
     if not set(seq).issubset(allowed):
         invalid = set(seq) - allowed
@@ -57,25 +57,37 @@ def one_hot_encode(seq, characters = "ACDEFGHIKLMNPQRSTVWY-"):
     # Dictionary returning class indices for each nucleotide or amino acid
 
     dictionary = {x: i for i, x in enumerate(characters)}
-    dictionary["X"] = dictionary["-"] # X is a gap character
     
     # Create array from nucleotide sequence
     tensor = F.one_hot(torch.tensor([dictionary[x] for x in seq]), num_classes=len(characters))
+
+    # Calculate padding size
+    pad_len = max_len - tensor.size(0)
+    # Pad tensor randomly on right or left side
+    pad = torch.zeros((pad_len, len(characters)))
+    if random.choice([True, False]):  # Randomly choose True or False
+        tensor = torch.cat((pad, tensor))
+    else:
+        tensor = torch.cat((tensor, pad))
+
     tensor = tensor.permute(1, 0)
 
     return tensor
 
-def one_hot_decode(tensor, characters = "ACDEFGHIKLMNPQRSTVWY-"):
+def one_hot_decode(tensor, characters = "ACDEFGHIKLMNPQRSTVWY-", cutoff = 0.5):
     """
     Given a one-hot encoded tensor and a string of characters, return the decoded sequence based on the characters provided.
     """
     # Dictionary returning nucleotides or amino acids for each class index
     dictionary = {i: x for i, x in enumerate(characters)}
 
-    # Get the class index with the highest probability for each position
-    tensor = torch.argmax(tensor, dim=0)
     # Create sequence from class indices
-    seq = [dictionary[x.item()] for x in tensor]
+    seq = []
+    for i in range(tensor.shape[1]):
+        if torch.all(tensor[:, i] < cutoff):
+            seq.append('-')
+        else:
+            seq.append(dictionary[torch.argmax(tensor[:, i]).item()])
 
     return "".join(seq)
 
@@ -101,10 +113,10 @@ def OHEAAgen(seqs, characters="ACDEFGHIKLMNPQRSTVWY-", length=40):
     for seq in seqs:
         # seq = pad_string(seq, length=3592)
         # seq = pad_string(seq, length=1800)
-        seq = pad_string(seq, length=length)
+        # seq = pad_string(seq, length=length)
         # seq = pad_string(seq, length=3592)
-        seq = one_hot_encode(seq, characters)
-        seq = 2*seq - 1 # Go from 0:1 to -1:1
+        seq = one_hot_encode(seq, characters, length)
+        # seq = 2*seq - 1 # Go from 0:1 to -1:1
 
         yield seq
 

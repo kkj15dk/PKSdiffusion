@@ -3,7 +3,7 @@ from denoising_diffusion_pytorch_1d import Unet1D, GaussianDiffusion1D, Trainer1
 from utils import *
 from Bio import SeqIO
 
-seed = 42
+seed = 41
 set_seed(seed) # set the random seed
 print("seed set as " + str(seed))
 
@@ -11,7 +11,7 @@ model = Unet1D( # This UNET model cann0t take in odd length inputs...
     dim = 64,
     # dim = 128,
     dim_mults = (1, 2, 4, 8),
-    channels = 21
+    channels = 20
 )
 
 print("Model parameters: ", count_parameters(model))
@@ -25,7 +25,7 @@ aa_file = "NRPSs_mid-0-1800.fa"
 if not test:
     if not alignment:
         train_record_aa = [record for record in SeqIO.parse(aa_file, "fasta")]
-        characters = "ACDEFGHIKLMNPQRSTVWY-"
+        characters = "ACDEFGHIKLMNPQRSTVWY"
         seqs = [str(record.seq) for record in train_record_aa] # SOME OF THESE SEQS HAVE UNIMPLEMENTED AA's AS A CHARACTERS
         print("There are " + str(len(seqs)) + " sequences in the daatset.")
         seqs = [seq for seq in seqs if set(seq).issubset(characters)]
@@ -59,7 +59,7 @@ if test:
         max_len = max([len(seq) for seq in seqs])
     elif not alignment:
         seqs = random_aa_seq_unaligned(1000)
-        characters = "ACDEFGHIKLMNPQRSTVWY-" # "ACDEFGHIKLMNPQRSTVWY-<>"
+        characters = "ACDEFGHIKLMNPQRSTVWY" # "ACDEFGHIKLMNPQRSTVWY-<>"
         # seqs = [ ">" + seq + "<" for seq in seqs]
         max_len = max([len(seq) for seq in seqs])
         # seqs = [pad_string(seq, max_len) for seq in seqs]
@@ -96,14 +96,14 @@ trainer = Trainer1D(
     dataset = dataset,
     train_batch_size = 32,
     train_lr = 8e-5,
-    train_num_steps = 700000,         # total training steps
+    train_num_steps = 70000,         # total training steps
     gradient_accumulate_every = 2,    # gradient accumulation steps
     ema_decay = 0.995,                # exponential moving average decay
     amp = True,                       # turn on mixed precision
-    save_and_sample_every = 100000,
-    results_folder="./resultsUNET_NRPS_mid_0-1800_v_cosine",
+    save_and_sample_every = 1000,
+    results_folder="./resultsTEST_NRPS",
 )
-# trainer.load("11")
+trainer.load("2")
 diffusion.visualize_diffusion(next(iter(dataset)), [10*i for i in range(100)], trainer.results_folder, gif = False)
 trainer.train()
 

@@ -691,8 +691,7 @@ class GaussianDiffusion1D(nn.Module):
             yield corrupted_data, t
     
     @staticmethod
-    def save_logo_plot(tensor, idx, png_dir, positions_per_line, width = 100):
-        amino_acids = ['A', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'K', 'L', 'M', 'N', 'P', 'Q', 'R', 'S', 'T', 'V', 'W', 'Y', '-']
+    def save_logo_plot(tensor, idx, png_dir, positions_per_line, width = 100, height = 10, amino_acids = ['A', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'K', 'L', 'M', 'N', 'P', 'Q', 'R', 'S', 'T', 'V', 'W', 'Y', '-']):
 
         num_positions = tensor.shape[1]
         num_lines = (num_positions + positions_per_line - 1) // positions_per_line
@@ -710,13 +709,13 @@ class GaussianDiffusion1D(nn.Module):
             logo.style_spines(spines=['left', 'bottom'], visible=True)
             logo.ax.set_ylabel("Probability")
             logo.ax.set_xlabel("Position")
-            logo.ax.set_ylim(-20, 20)
+            logo.ax.set_ylim(-0.1 * height, height)
 
         plt.tight_layout()
-        plt.title(f"Sequence Logo for Tensor {idx + 1}")
+        plt.title(f"Sequence Logo for Tensor {idx}")
 
         # Save the figure as a PNG file
-        png_path = os.path.join(png_dir, f"sequence_logo_{idx + 1}.png")
+        png_path = os.path.join(png_dir, f"sequence_logo_{idx}.png")
         plt.savefig(png_path)
         plt.close(logo.fig)
         
@@ -761,7 +760,7 @@ class GaussianDiffusion1D(nn.Module):
 
         if gif:
             self.plot_sequence_logo_and_create_gif(tensor_list, positions_per_line=500, output_gif_path=output_gif_path, png_dir=png_dir)
-                
+
 
     def p_losses(self, x_start, t, noise = None):
         b, c, n = x_start.shape
@@ -981,7 +980,13 @@ class Trainer1D(object):
 
                         all_samples = torch.cat(all_samples_list, dim = 0)
                         all_seqs = [SeqRecord(Seq(one_hot_decode(sample)), id=str(i), description='') for i, sample in enumerate(all_samples)]
+                        
+                        # Save the samples as a FASTA file
                         SeqIO.write(all_seqs, str(self.results_folder / f'sample-{milestone}.fa'), 'fasta')
+                        
+                        # Save one sample as a logoplot PNG file
+                        # self.model.save_logo_plot(all_samples[0].cpu().numpy(), f'{milestone}-first', self.results_folder, 200, 100, 1)
+                        self.model.save_logo_plot(all_samples[0].cpu().numpy(), f'{milestone}', self.results_folder, 100, 100, 3, amino_acids = ['A', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'K', 'L', 'M', 'N', 'P', 'Q', 'R', 'S', 'T', 'V', 'W', 'Y'])
 
                         quick_loss_plot(self.losses, "DDPM", str(self.results_folder / f'loss-{milestone}'))
                         # torch.save(all_samples, str(self.results_folder / f'sample-{milestone}.png'))
