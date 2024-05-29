@@ -100,8 +100,8 @@ trainer = Trainer1D(
     gradient_accumulate_every = 2,    # gradient accumulation steps
     ema_decay = 0.995,                # exponential moving average decay
     amp = True,                       # turn on mixed precision
-    save_and_sample_every = 1000,
-    results_folder="./resultsTEST_NRPS",
+    save_and_sample_every = 100000,
+    results_folder="./resultsUNET_NRPS_mid_0-1800_v_cosine_0to1",
 )
 trainer.load("2")
 diffusion.visualize_diffusion(next(iter(dataset)), [10*i for i in range(100)], trainer.results_folder, gif = False)
