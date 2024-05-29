@@ -95,13 +95,13 @@ trainer = Trainer1D(
     diffusion,
     dataset = dataset,
     train_batch_size = 32,
-    train_lr = 8e-5,
+    train_lr = 1e-5,
     train_num_steps = 1000000,         # total training steps
     gradient_accumulate_every = 2,    # gradient accumulation steps
     ema_decay = 0.995,                # exponential moving average decay
     amp = True,                       # turn on mixed precision
     save_and_sample_every = 100000,
-    results_folder="./resultsUNET_NRPS_mid_0-1800_v_cosine_0to1_zeropadding",
+    results_folder="./resultsUNET_NRPS_mid_0-1800_v_cosine_0to1_zeropadding_1e-5lr",
 )
 # trainer.load("2")
 diffusion.visualize_diffusion(next(iter(dataset)), [10*i for i in range(100)], trainer.results_folder, gif = False)

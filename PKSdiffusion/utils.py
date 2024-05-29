@@ -74,7 +74,7 @@ def one_hot_encode(seq, characters = "ACDEFGHIKLMNPQRSTVWY-", max_len = 40):
 
     return tensor
 
-def one_hot_decode(tensor, characters = "ACDEFGHIKLMNPQRSTVWY-", cutoff = 0.5):
+def one_hot_decode(tensor, characters = "ACDEFGHIKLMNPQRSTVWY-", cutoff = 0.3):
     """
     Given a one-hot encoded tensor and a string of characters, return the decoded sequence based on the characters provided.
     """
