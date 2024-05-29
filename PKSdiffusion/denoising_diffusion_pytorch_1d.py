@@ -3,7 +3,7 @@ from pathlib import Path
 from random import random
 from functools import partial
 from collections import namedtuple
-from multiprocessing import cpu_count
+from multiprocessing import cpu_count, Process
 
 import torch
 from torch import nn, einsum, Tensor
@@ -681,18 +681,21 @@ class GaussianDiffusion1D(nn.Module):
         )
     
     @torch.no_grad()
-    def get_noised_tensors(self, x_start, t_values): # Could be more efficient
-        c,n = x_start.shape
-        device = self.betas.device
-        x_start = x_start.reshape(1,c,n).to(device)
-        for i, t in enumerate(t_values):
-            t = torch.tensor([t]).to(device)
-            corrupted_data = self.q_sample(x_start, t)
-            yield corrupted_data, t
+    def get_noised_tensors(self, x_start, t): # Could be more efficient
+        c, n, device = *x_start.shape, self.betas.device
+        t = torch.tensor(t, device=device).long()
+        x_start = x_start.unsqueeze(0).repeat(len(t), 1, 1).to(device)
+
+        x_start = self.normalize(x_start)
+        x_noised = self.q_sample(x_start, t)
+        x_noised = self.unnormalize(x_noised)
+        
+        return x_noised
     
     @staticmethod
-    def save_logo_plot(tensor, idx, png_dir, positions_per_line, width = 100, height = 10, amino_acids = ['A', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'K', 'L', 'M', 'N', 'P', 'Q', 'R', 'S', 'T', 'V', 'W', 'Y', '-']):
-
+    def save_logo_plot(tensor, idx, png_dir, positions_per_line, width = 100, ylim = (-1,10), amino_acids = ['A', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'K', 'L', 'M', 'N', 'P', 'Q', 'R', 'S', 'T', 'V', 'W', 'Y']):
+        assert tensor.ndim == 2
+        
         num_positions = tensor.shape[1]
         num_lines = (num_positions + positions_per_line - 1) // positions_per_line
         # print(f"Number of lines: {num_lines}")
@@ -709,7 +712,7 @@ class GaussianDiffusion1D(nn.Module):
             logo.style_spines(spines=['left', 'bottom'], visible=True)
             logo.ax.set_ylabel("Probability")
             logo.ax.set_xlabel("Position")
-            logo.ax.set_ylim(-0.1 * height, height)
+            logo.ax.set_ylim(*ylim)
 
         plt.tight_layout()
         plt.title(f"Sequence Logo for Tensor {idx}")
@@ -722,14 +725,14 @@ class GaussianDiffusion1D(nn.Module):
         return png_path
 
     @torch.no_grad()
-    def plot_sequence_logo_and_create_gif(self, tensor_list, output_gif_path="sequence_logos.gif", png_dir = "sequence_logo_pngs", positions_per_line=100):
+    def plot_sequence_logo_and_create_gif(self, tensor, positions_per_line, output_gif_path="sequence_logos.gif", png_dir = "sequence_logo_pngs"):
         
         os.makedirs(png_dir, exist_ok=True)
         
         png_files = []
         
-        for idx, tensor in enumerate(tensor_list):
-            png_files.append(self.save_logo_plot(tensor, idx, png_dir, positions_per_line))
+        for idx, tensor in enumerate(tensor):
+            png_files.append(self.save_logo_plot(tensor, idx, png_dir, positions_per_line, positions_per_line, ylim=(-5,15)))
 
         # Create a GIF from the saved PNG files
         with imageio.get_writer(output_gif_path, mode='I', duration=0.5) as writer:
@@ -740,35 +743,40 @@ class GaussianDiffusion1D(nn.Module):
         print(f"GIF saved at {output_gif_path}")
 
     @torch.no_grad()
-    def visualize_diffusion(self, x_start, t_values, folder, filename = "diffusion.fa", gif = False): # Could be more efficient
+    def visualize_diffusion(self, x_start, t_values, folder, filename = "diffusion.fa", gif = False, positions_per_line = 100): # Could be more efficient
 
         png_dir = str(folder) + "/" + "sequence_logo_pngs"
-        output_gif_path = str(folder) + "/" + "sequence_logos.gif"
+        output_gif_path = str(folder) + "/" + "diffusion.gif"
 
         tensor_list = []
+        seq_record_list = []
         # Clear the file
         with open(str(folder) + "/" + filename, "w") as f:
             pass
 
-        # Write to the file
+        # Get noised tensors and write to the file
+        x_noised = self.get_noised_tensors(x_start, t_values)
+
+        seqs = one_hot_decode(x_noised)
+        seq_record_list = [SeqRecord(Seq(seq), id=str(t_values[i]), description="") for i, seq in enumerate(seqs)]
+
         with open(str(folder) + "/" + filename, "a") as f:
-            for tensor, t in self.get_noised_tensors(x_start, t_values):
-                tensor = tensor.squeeze()
-                seq_record = SeqRecord(Seq(one_hot_decode(tensor)), id=str(t.item()), description="")
-                SeqIO.write(seq_record, f, "fasta")
-                tensor_list.append(tensor.cpu().numpy())
+            SeqIO.write(seq_record_list, f, "fasta")
 
+        # Create and start a new process for the gif
+        p = Process(target=self.plot_sequence_logo_and_create_gif, args=(x_noised.cpu().numpy(), positions_per_line, output_gif_path, png_dir))
+        
         if gif:
-            self.plot_sequence_logo_and_create_gif(tensor_list, positions_per_line=500, output_gif_path=output_gif_path, png_dir=png_dir)
-
+            p.start()
 
     def p_losses(self, x_start, t, noise = None):
         b, c, n = x_start.shape
         noise = default(noise, lambda: torch.randn_like(x_start))
 
         # noise sample
-
+        # print(x_start.max(), x_start.min())
         x = self.q_sample(x_start = x_start, t = t, noise = noise)
+        # print(x.max(), x.min())
 
         # if doing self-conditioning, 50% of the time, predict x_start from current set of times
         # and condition with unet with that
@@ -979,14 +987,15 @@ class Trainer1D(object):
                             all_samples_list = list(map(lambda n: self.ema.ema_model.sample(batch_size=n), batches))
 
                         all_samples = torch.cat(all_samples_list, dim = 0)
-                        all_seqs = [SeqRecord(Seq(one_hot_decode(sample)), id=str(i), description='') for i, sample in enumerate(all_samples)]
-                        
-                        # Save the samples as a FASTA file
-                        SeqIO.write(all_seqs, str(self.results_folder / f'sample-{milestone}.fa'), 'fasta')
+
+                        # Save all samples as a FASTA file
+                        all_seqs = one_hot_decode(all_samples)
+                        seq_record_list = [SeqRecord(Seq(seq), id=str(i), description='') for i, seq in enumerate(all_seqs)]
+                        with open( str(self.results_folder / f'sample-{milestone}.fa'), "w") as f:
+                            SeqIO.write(seq_record_list, f, "fasta")
                         
                         # Save one sample as a logoplot PNG file
-                        # self.model.save_logo_plot(all_samples[0].cpu().numpy(), f'{milestone}-first', self.results_folder, 200, 100, 1)
-                        self.model.save_logo_plot(all_samples[0].cpu().numpy(), f'{milestone}', self.results_folder, 100, 100, 3, amino_acids = ['A', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'K', 'L', 'M', 'N', 'P', 'Q', 'R', 'S', 'T', 'V', 'W', 'Y'])
+                        self.model.save_logo_plot(all_samples[0].cpu().numpy(), f'{milestone}', self.results_folder, 100, 100, (-1,10), amino_acids = ['A', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'K', 'L', 'M', 'N', 'P', 'Q', 'R', 'S', 'T', 'V', 'W', 'Y'])
 
                         quick_loss_plot(self.losses, "DDPM", str(self.results_folder / f'loss-{milestone}'))
                         # torch.save(all_samples, str(self.results_folder / f'sample-{milestone}.png'))

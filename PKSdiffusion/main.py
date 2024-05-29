@@ -7,11 +7,14 @@ seed = 41
 set_seed(seed) # set the random seed
 print("seed set as " + str(seed))
 
-model = Unet1D( # This UNET model cann0t take in odd length inputs...
+model = Unet1D( # This UNET model cannot take in odd length inputs...
     dim = 64,
     # dim = 128,
     dim_mults = (1, 2, 4, 8),
-    channels = 20
+    channels = 20,
+    learned_sinusoidal_cond=True,
+    random_fourier_features=True,
+    # learned_variance=True, # Makes it crash
 )
 
 print("Model parameters: ", count_parameters(model))
@@ -79,6 +82,7 @@ diffusion = GaussianDiffusion1D(
     objective = 'pred_v',
     beta_schedule = 'cosine',
     # beta_schedule = 'linear',
+    auto_normalize=True,
 )
 
 # Create a Dataset
@@ -100,16 +104,24 @@ trainer = Trainer1D(
     gradient_accumulate_every = 2,    # gradient accumulation steps
     ema_decay = 0.995,                # exponential moving average decay
     amp = True,                       # turn on mixed precision
+<<<<<<< HEAD
     save_and_sample_every = 100000,
     results_folder="./resultsUNET_NRPS_mid_0-1800_v_cosine_0to1_zeropadding_1e-5lr",
+=======
+    save_and_sample_every = 10000,
+    results_folder="./resultsTEST_NRPS_3",
+>>>>>>> af4c821d1f2021f736e0078e730de6b8741413e4
 )
 # trainer.load("2")
-diffusion.visualize_diffusion(next(iter(dataset)), [10*i for i in range(100)], trainer.results_folder, gif = False)
+diffusion.visualize_diffusion(next(iter(dataset)), [100*i for i in range(10)], trainer.results_folder, gif = False)
 trainer.train()
 
 # after a lot of training
 
-sampled_seq = diffusion.sample(batch_size = 10)
-print(sampled_seq.shape)
-for i in range(sampled_seq.shape[0]):
-    print(one_hot_decode(sampled_seq[i], characters=characters))
+sampled_seqs = diffusion.sample(batch_size = 10)
+for i, seq in enumerate(sampled_seqs):
+    diffusion.save_logo_plot(seq.cpu().numpy(), i, trainer.results_folder, 100)
+print(sampled_seqs.shape)
+seqs = one_hot_decode(sampled_seqs, characters=characters)
+for seq in seqs:
+    print(seq)
