@@ -995,7 +995,7 @@ class Trainer1D(object):
                             SeqIO.write(seq_record_list, f, "fasta")
                         
                         # Save one sample as a logoplot PNG file
-                        self.model.save_logo_plot(all_samples[0].cpu().numpy(), f'{milestone}', self.results_folder, 100, 100, (-1,10), amino_acids = ['A', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'K', 'L', 'M', 'N', 'P', 'Q', 'R', 'S', 'T', 'V', 'W', 'Y'])
+                        self.model.save_logo_plot(all_samples[0].cpu().numpy(), f'{milestone}', self.results_folder, 100, 100, (-1,5), amino_acids = ['A', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'K', 'L', 'M', 'N', 'P', 'Q', 'R', 'S', 'T', 'V', 'W', 'Y'])
 
                         quick_loss_plot(self.losses, "DDPM", str(self.results_folder / f'loss-{milestone}'))
                         # torch.save(all_samples, str(self.results_folder / f'sample-{milestone}.png'))

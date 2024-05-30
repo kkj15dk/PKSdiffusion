@@ -3,7 +3,7 @@ from denoising_diffusion_pytorch_1d import Unet1D, GaussianDiffusion1D, Trainer1
 from utils import *
 from Bio import SeqIO
 
-seed = 41
+seed = 42
 set_seed(seed) # set the random seed
 print("seed set as " + str(seed))
 
@@ -100,15 +100,15 @@ trainer = Trainer1D(
     dataset = dataset,
     train_batch_size = 32,
     train_lr = 1e-5,
-    train_num_steps = 10000,         # total training steps
+    train_num_steps = 1000000,         # total training steps
     gradient_accumulate_every = 2,    # gradient accumulation steps
     ema_decay = 0.995,                # exponential moving average decay
     amp = True,                       # turn on mixed precision
-    save_and_sample_every = 1000,
-    results_folder="./resultsTEST_NRPS_mid",
+    save_and_sample_every = 100000,
+    results_folder="./resultsUNET_NRPS_mid",
 )
 # trainer.load("2")
-diffusion.visualize_diffusion(next(iter(dataset)), [100*i for i in range(10)], trainer.results_folder, gif = True)
+diffusion.visualize_diffusion(next(iter(dataset)), [10*i for i in range(100)], trainer.results_folder, gif = True)
 trainer.train()
 
 # after a lot of training
@@ -116,7 +116,7 @@ trainer.train()
 sampled_seqs = diffusion.sample(batch_size = 10)
 for i, seq in enumerate(sampled_seqs):
     diffusion.save_logo_plot(seq.cpu().numpy(), i, trainer.results_folder, 100)
-print(sampled_seqs.shape)
+
 seqs = one_hot_decode(sampled_seqs, characters=characters)
 for seq in seqs:
     print(seq)
