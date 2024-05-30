@@ -104,11 +104,11 @@ trainer = Trainer1D(
     gradient_accumulate_every = 2,    # gradient accumulation steps
     ema_decay = 0.995,                # exponential moving average decay
     amp = True,                       # turn on mixed precision
-    save_and_sample_every = 10000,
-    results_folder="./resultsTEST_NRPS_3",
+    save_and_sample_every = 1000,
+    results_folder="./resultsTEST_NRPS",
 )
 # trainer.load("2")
-diffusion.visualize_diffusion(next(iter(dataset)), [100*i for i in range(10)], trainer.results_folder, gif = False)
+diffusion.visualize_diffusion(next(iter(dataset)), [100*i for i in range(10)], trainer.results_folder, gif = True)
 trainer.train()
 
 # after a lot of training
