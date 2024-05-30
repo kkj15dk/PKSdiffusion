@@ -100,12 +100,12 @@ trainer = Trainer1D(
     dataset = dataset,
     train_batch_size = 32,
     train_lr = 1e-5,
-    train_num_steps = 1000000,         # total training steps
+    train_num_steps = 10000,         # total training steps
     gradient_accumulate_every = 2,    # gradient accumulation steps
     ema_decay = 0.995,                # exponential moving average decay
     amp = True,                       # turn on mixed precision
     save_and_sample_every = 1000,
-    results_folder="./resultsTEST_NRPS",
+    results_folder="./resultsTEST_NRPS_mid",
 )
 # trainer.load("2")
 diffusion.visualize_diffusion(next(iter(dataset)), [100*i for i in range(10)], trainer.results_folder, gif = True)
