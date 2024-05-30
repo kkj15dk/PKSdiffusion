@@ -999,7 +999,7 @@ class Trainer1D(object):
                             SeqIO.write(seq_record_list, f, "fasta")
                         
                         # Save one sample as a logoplot PNG file
-                        p = Process(target=self.model.save_logo_plot, args=(all_samples[0].cpu().numpy(), f'{milestone}', self.results_folder, 100, 100, (-1,5), amino_acids = ['A', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'K', 'L', 'M', 'N', 'P', 'Q', 'R', 'S', 'T', 'V', 'W', 'Y']))
+                        p = Process(target=self.model.save_logo_plot, args=(all_samples[0].cpu().numpy(), f'{milestone}', self.results_folder, 100, 100, (-1,5), ['A', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'K', 'L', 'M', 'N', 'P', 'Q', 'R', 'S', 'T', 'V', 'W', 'Y']))
                         p.start()
 
                         quick_loss_plot(self.losses, "DDPM", str(self.results_folder / f'loss-{milestone}'))
