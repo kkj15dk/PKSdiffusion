@@ -107,7 +107,7 @@ trainer = Trainer1D(
     save_and_sample_every = 100000,
     results_folder="./resultsUNET_NRPS_mid",
 )
-# trainer.load("2")
+trainer.load("1")
 diffusion.visualize_diffusion(next(iter(dataset)), [10*i for i in range(100)], trainer.results_folder, gif = True)
 trainer.train()
 

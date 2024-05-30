@@ -696,6 +696,11 @@ class GaussianDiffusion1D(nn.Module):
     def save_logo_plot(tensor, idx, png_dir, positions_per_line, width = 100, ylim = (-1,10), amino_acids = ['A', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'K', 'L', 'M', 'N', 'P', 'Q', 'R', 'S', 'T', 'V', 'W', 'Y']):
         assert tensor.ndim == 2
         
+        png_path = os.path.join(png_dir, f"sequence_logo_{idx}.png")
+
+        if os.path.exists(png_path):
+            return png_path
+
         num_positions = tensor.shape[1]
         num_lines = (num_positions + positions_per_line - 1) // positions_per_line
         # print(f"Number of lines: {num_lines}")
@@ -718,7 +723,6 @@ class GaussianDiffusion1D(nn.Module):
         plt.title(f"Sequence Logo for Tensor {idx}")
 
         # Save the figure as a PNG file
-        png_path = os.path.join(png_dir, f"sequence_logo_{idx}.png")
         plt.savefig(png_path)
         plt.close(logo.fig)
         
