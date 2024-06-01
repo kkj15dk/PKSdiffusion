@@ -43,12 +43,12 @@ def quick_loss_plot(train_data, label, filename, loss_type="Loss"):
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
-def one_hot_encode(seq, characters = "ACDEFGHIKLMNPQRSTVWY-", max_len = 40):
+def one_hot_encode(seq, characters = "ACDEFGHIKLMNPQRSTVWY", max_len = 40):
     """
     Given an AA sequence and a string of characters, return its one-hot encoding based on the characters provided.
     """
-    # Make sure seq has only allowed bases, and the padding character. Holy fuck im making this convoluted, whoops
-    allowed = set(characters + "-")
+    # Make sure seq has only allowed bases, and the padding character. Holy fuck i'm making this convoluted, whoops
+    allowed = set(characters)
 
     if not set(seq).issubset(allowed):
         invalid = set(seq) - allowed
@@ -118,7 +118,7 @@ class MyIterDataset(IterableDataset):
         # Create a generator object
         generator = self.generator_function(self.seqs, self.characters, self.length)
         for item in generator:
-            yield item.float()
+            yield item
     
     def __len__(self):
         return self.len
@@ -126,13 +126,15 @@ class MyIterDataset(IterableDataset):
 def OHEAAgen(seqs, characters="ACDEFGHIKLMNPQRSTVWY-", length=40):
     # yield from record_gen
     for seq in seqs:
+        seq, cl = seq
+        cl = torch.tensor(cl)
         # seq = pad_string(seq, length=3592)
         # seq = pad_string(seq, length=1800)
         # seq = pad_string(seq, length=length)
         # seq = pad_string(seq, length=3592)
         seq = one_hot_encode(seq, characters, length)
 
-        yield seq
+        yield seq.float(), cl #.float()
 
 # Description: Generate random amino acid sequences for testing
 def random_aa_seq(n):
@@ -164,12 +166,17 @@ def random_aa_seq(n):
 def random_aa_seq_unaligned(n):
     lsseq = []
     for i in range(n):
+        cl = 1 # class label
         # Generate a random aa sequence
         seq = "M"
         for j in range(3):
             seq += random.choice("ACDEFGHIKLMNPQRSTVWY")
         seq += "HINQA"
-        seq += random.choice(["","ACDE"])
+        if random.choice([True, False]):
+            seq += ""
+        else:
+            seq += "ACDE"
+            cl = 2
         for j in range(2):
             seq += random.choice("ACDEFGHIKLMNPQRSTVWY")
         seq += random.choice(["","FGHI"])
@@ -184,7 +191,7 @@ def random_aa_seq_unaligned(n):
         seq += random.choice(["", "TVWY"])
         # Print the sequence
         # print(seq)
-        lsseq.append(seq)
+        lsseq.append((seq, cl))
     return lsseq
 
 def pad_string(string, length, padding_value='-'):

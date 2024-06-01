@@ -2,6 +2,7 @@ import torch
 from denoising_diffusion_pytorch_1d import Unet1D, GaussianDiffusion1D, Trainer1D, Dataset1D
 from utils import *
 from Bio import SeqIO
+import json
 
 seed = 42
 set_seed(seed) # set the random seed
@@ -24,19 +25,28 @@ alignment = False
 
 # aa_file = "clustalo_alignment.aln"
 # aa_file = "PKSs.fa"
-aa_file = "NRPSs_mid-0-1800.fa"
+aa_file = "NRPSs_mid-1800.fa"
+label_file = 'labels.json'
+label_dict = json.loads(open(label_file).read())
+
 if not test:
     if not alignment:
         train_record_aa = [record for record in SeqIO.parse(aa_file, "fasta")]
         characters = "ACDEFGHIKLMNPQRSTVWY"
-        seqs = [str(record.seq) for record in train_record_aa] # SOME OF THESE SEQS HAVE UNIMPLEMENTED AA's AS A CHARACTERS
-        print("There are " + str(len(seqs)) + " sequences in the daatset.")
-        seqs = [seq for seq in seqs if set(seq).issubset(characters)]
+        seqs = []
+        for record in train_record_aa:
+            description = record.description.split('|')[-1]
+            if description in label_dict['labels']:
+                seq = str(record.seq)
+                label = label_dict['labels'][description]['label']
+                seqs.append((seq, label))
+        print("There are " + str(len(seqs)) + " sequences in the dataset with correct labeling.")
+        seqs = [seq for seq in seqs if set(seq[0]).issubset(characters)]
         print("There are " + str(len(seqs)) + " sequences when removing unimplemented amino acids.")
         seqs = list(set(seqs)) # remove duplicates
         print("There are " + str(len(seqs)) + " sequences when removing duplicates. This is the final dataset.")
         random.shuffle(seqs) # shuffle sequences
-        max_len = max([len(seq) for seq in seqs])
+        max_len = max([len(seq[0]) for seq in seqs])
         # seqs = [pad_string(seq, max_len) for seq in seqs] # pad sequences to max length Should be done in dataloader/collate_fn
     elif alignment:
         train_record_aa = [record for record in SeqIO.parse(aa_file, "fasta")]
@@ -59,17 +69,18 @@ if test:
     if alignment:
         seqs = random_aa_seq(1000)
         characters = "ACDEFGHIKLMNPQRSTVWY-"
-        max_len = max([len(seq) for seq in seqs])
+        max_len = max([len(seq[0]) for seq in seqs])
     elif not alignment:
         seqs = random_aa_seq_unaligned(1000)
         characters = "ACDEFGHIKLMNPQRSTVWY" # "ACDEFGHIKLMNPQRSTVWY-<>"
         # seqs = [ ">" + seq + "<" for seq in seqs]
-        max_len = max([len(seq) for seq in seqs])
+        max_len = max([len(seq[0]) for seq in seqs])
         # seqs = [pad_string(seq, max_len) for seq in seqs]
     print("Test of one_hot_encode and one_hot_decode:")
     print("Max length sequence is: " + str(max_len))
-    print(seqs[0])
-    aa_OHE = one_hot_encode(seqs[0], characters=characters)
+    for i in range(10):
+        print(seqs[i])
+    aa_OHE = one_hot_encode(seqs[0][0], characters=characters)
     print(one_hot_decode(aa_OHE, characters=characters))
 
 diffusion = GaussianDiffusion1D(
@@ -94,28 +105,31 @@ dataset = MyIterDataset(OHEAAgen, seqs, len(seqs), characters, max_len)
 # loss.backward()
 
 # Or using trainer
+num_classes = 20
+samples = [(cl,g) for cl in range(num_classes) for g in [0, 0.1, 1, 4, 10]]
 
 trainer = Trainer1D(
     diffusion,
     dataset = dataset,
     train_batch_size = 32,
-    train_lr = 1e-5,
-    train_num_steps = 1000000,         # total training steps
+    train_lr = 1e-4, # 1e-5,
+    train_num_steps = 10000,         # total training steps
     gradient_accumulate_every = 2,    # gradient accumulation steps
     ema_decay = 0.995,                # exponential moving average decay
     amp = True,                       # turn on mixed precision
-    save_and_sample_every = 100000,
-    results_folder="./resultsUNET_NRPS_mid",
+    save_and_sample_every = 1000,
+    results_folder="./resultsTESTing",
+    samples=samples,
 )
-trainer.load("1")
-diffusion.visualize_diffusion(next(iter(dataset)), [10*i for i in range(100)], trainer.results_folder, gif = True)
+# trainer.load("1")
+diffusion.visualize_diffusion(next(iter(dataset)), [100*i for i in range(10)], trainer.results_folder, gif = False)
 trainer.train()
 
 # after a lot of training
 
-sampled_seqs = diffusion.sample(batch_size = 10)
+sampled_seqs = diffusion.sample(samples = samples)
 for i, seq in enumerate(sampled_seqs):
-    diffusion.save_logo_plot(seq.cpu().numpy(), i, trainer.results_folder, 100)
+    diffusion.save_logo_plot(seq.cpu().numpy(), "sample_" + str(i + 1), trainer.results_folder, 100)
 
 seqs = one_hot_decode(sampled_seqs, characters=characters)
 for seq in seqs:

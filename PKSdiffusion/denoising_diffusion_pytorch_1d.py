@@ -184,24 +184,34 @@ class Block(nn.Module):
         return x
 
 class ResnetBlock(nn.Module):
-    def __init__(self, dim, dim_out, *, time_emb_dim = None, groups = 8):
+    def __init__(self, dim, dim_out, *, time_emb_dim = None, cl_emb_dim = None, groups = 8):
         super().__init__()
-        self.mlp = nn.Sequential(
+        self.mlpt = nn.Sequential(
             nn.SiLU(),
-            nn.Linear(time_emb_dim, dim_out * 2)
+            nn.Linear(time_emb_dim, dim_out)
         ) if exists(time_emb_dim) else None
+
+        self.mlpcl = nn.Sequential(
+            nn.SiLU(),
+            nn.Linear(cl_emb_dim, dim_out)
+        ) if exists(cl_emb_dim) else None
 
         self.block1 = Block(dim, dim_out, groups = groups)
         self.block2 = Block(dim_out, dim_out, groups = groups)
         self.res_conv = nn.Conv1d(dim, dim_out, 1) if dim != dim_out else nn.Identity()
 
-    def forward(self, x, time_emb = None):
+    def forward(self, x, time_emb = None, cl_emb = None):
 
         scale_shift = None
-        if exists(self.mlp) and exists(time_emb):
-            time_emb = self.mlp(time_emb)
+        if exists(self.mlpt) and exists(time_emb) and exists(self.mlpcl) and exists(cl_emb):
+            time_emb = self.mlpt(time_emb)
             time_emb = rearrange(time_emb, 'b c -> b c 1')
-            scale_shift = time_emb.chunk(2, dim = 1)
+            # scale_shift = time_emb.chunk(2, dim = 1)
+
+            ## New
+            cl_emb = self.mlpcl(cl_emb)
+            cl_emb = rearrange(cl_emb, 'b c -> b c 1')
+            scale_shift = (cl_emb, time_emb)
 
         h = self.block1(x, scale_shift = scale_shift)
 
@@ -272,12 +282,13 @@ class Unet1D(nn.Module):
         out_dim = None,
         dim_mults=(1, 2, 4, 8),
         channels = 3,
+        classes = 2,
         self_condition = False,
         resnet_block_groups = 8,
         learned_variance = False,
         learned_sinusoidal_cond = False,
         random_fourier_features = False,
-        learned_sinusoidal_dim = 16,
+        learned_sinusoidal_dim = 16, # Same for t and c
         sinusoidal_pos_emb_theta = 10000,
         attn_dim_head = 32,
         attn_heads = 4
@@ -287,6 +298,7 @@ class Unet1D(nn.Module):
         # determine dimensions
 
         self.channels = channels
+        self.classes = classes
         self.self_condition = self_condition
         input_channels = channels * (2 if self_condition else 1)
 
@@ -301,21 +313,35 @@ class Unet1D(nn.Module):
         # time embeddings
 
         time_dim = dim * 4
+        cl_dim = dim * 4
 
         self.random_or_learned_sinusoidal_cond = learned_sinusoidal_cond or random_fourier_features
-
+        # t
         if self.random_or_learned_sinusoidal_cond:
-            sinu_pos_emb = RandomOrLearnedSinusoidalPosEmb(learned_sinusoidal_dim, random_fourier_features)
-            fourier_dim = learned_sinusoidal_dim + 1
+            sinu_pos_embt = RandomOrLearnedSinusoidalPosEmb(learned_sinusoidal_dim, random_fourier_features)
+            fourier_dimt = learned_sinusoidal_dim + 1
         else:
-            sinu_pos_emb = SinusoidalPosEmb(dim, theta = sinusoidal_pos_emb_theta)
-            fourier_dim = dim
+            sinu_pos_embt = SinusoidalPosEmb(dim, theta = sinusoidal_pos_emb_theta)
+            fourier_dimt = dim
+        # c
+        if self.random_or_learned_sinusoidal_cond:
+            sinu_pos_embcl = RandomOrLearnedSinusoidalPosEmb(learned_sinusoidal_dim, random_fourier_features)
+            fourier_dimcl = learned_sinusoidal_dim + 1
+        else:
+            sinu_pos_embcl = SinusoidalPosEmb(dim, theta = sinusoidal_pos_emb_theta)
+            fourier_dimcl = dim
 
         self.time_mlp = nn.Sequential(
-            sinu_pos_emb,
-            nn.Linear(fourier_dim, time_dim),
+            sinu_pos_embt,
+            nn.Linear(fourier_dimt, time_dim),
             nn.GELU(),
             nn.Linear(time_dim, time_dim)
+        )
+        self.cl_mlp = nn.Sequential(
+            sinu_pos_embcl,
+            nn.Linear(fourier_dimcl, cl_dim),
+            nn.GELU(),
+            nn.Linear(cl_dim, cl_dim)
         )
 
         # layers
@@ -328,23 +354,23 @@ class Unet1D(nn.Module):
             is_last = ind >= (num_resolutions - 1)
 
             self.downs.append(nn.ModuleList([
-                block_klass(dim_in, dim_in, time_emb_dim = time_dim),
-                block_klass(dim_in, dim_in, time_emb_dim = time_dim),
+                block_klass(dim_in, dim_in, time_emb_dim = time_dim, cl_emb_dim = cl_dim),
+                block_klass(dim_in, dim_in, time_emb_dim = time_dim, cl_emb_dim = cl_dim),
                 Residual(PreNorm(dim_in, LinearAttention(dim_in))),
                 Downsample(dim_in, dim_out) if not is_last else nn.Conv1d(dim_in, dim_out, 3, padding = 1)
             ]))
 
         mid_dim = dims[-1]
-        self.mid_block1 = block_klass(mid_dim, mid_dim, time_emb_dim = time_dim)
+        self.mid_block1 = block_klass(mid_dim, mid_dim, time_emb_dim = time_dim, cl_emb_dim = cl_dim)
         self.mid_attn = Residual(PreNorm(mid_dim, Attention(mid_dim, dim_head = attn_dim_head, heads = attn_heads)))
-        self.mid_block2 = block_klass(mid_dim, mid_dim, time_emb_dim = time_dim)
+        self.mid_block2 = block_klass(mid_dim, mid_dim, time_emb_dim = time_dim, cl_emb_dim = cl_dim)
 
         for ind, (dim_in, dim_out) in enumerate(reversed(in_out)):
             is_last = ind == (len(in_out) - 1)
 
             self.ups.append(nn.ModuleList([
-                block_klass(dim_out + dim_in, dim_out, time_emb_dim = time_dim),
-                block_klass(dim_out + dim_in, dim_out, time_emb_dim = time_dim),
+                block_klass(dim_out + dim_in, dim_out, time_emb_dim = time_dim, cl_emb_dim = cl_dim),
+                block_klass(dim_out + dim_in, dim_out, time_emb_dim = time_dim, cl_emb_dim = cl_dim),
                 Residual(PreNorm(dim_out, LinearAttention(dim_out))),
                 Upsample(dim_out, dim_in) if not is_last else  nn.Conv1d(dim_out, dim_in, 3, padding = 1)
             ]))
@@ -352,10 +378,10 @@ class Unet1D(nn.Module):
         default_out_dim = channels * (1 if not learned_variance else 2)
         self.out_dim = default(out_dim, default_out_dim)
 
-        self.final_res_block = block_klass(dim * 2, dim, time_emb_dim = time_dim)
+        self.final_res_block = block_klass(dim * 2, dim, time_emb_dim = time_dim, cl_emb_dim = cl_dim)
         self.final_conv = nn.Conv1d(dim, self.out_dim, 1)
 
-    def forward(self, x, time, x_self_cond = None):
+    def forward(self, x, time, cl, x_self_cond = None):
         if self.self_condition:
             x_self_cond = default(x_self_cond, lambda: torch.zeros_like(x))
             x = torch.cat((x_self_cond, x), dim = 1)
@@ -364,37 +390,38 @@ class Unet1D(nn.Module):
         r = x.clone()
 
         t = self.time_mlp(time)
+        cl = self.cl_mlp(cl)
         # t = None
 
         h = []
 
         for block1, block2, attn, downsample in self.downs:
-            x = block1(x, t)
+            x = block1(x, t, cl)
             h.append(x)
 
-            x = block2(x, t)
+            x = block2(x, t, cl)
             x = attn(x)
             h.append(x)
 
             x = downsample(x)
 
-        x = self.mid_block1(x, t)
+        x = self.mid_block1(x, t, cl)
         x = self.mid_attn(x)
-        x = self.mid_block2(x, t)
+        x = self.mid_block2(x, t, cl)
 
         for block1, block2, attn, upsample in self.ups:
             x = torch.cat((x, h.pop()), dim = 1)
-            x = block1(x, t)
+            x = block1(x, t, cl)
 
             x = torch.cat((x, h.pop()), dim = 1)
-            x = block2(x, t)
+            x = block2(x, t, cl)
             x = attn(x)
 
             x = upsample(x)
 
         x = torch.cat((x, r), dim = 1)
 
-        x = self.final_res_block(x, t)
+        x = self.final_res_block(x, t, cl)
         return self.final_conv(x)
 
 # gaussian diffusion trainer class
@@ -429,15 +456,18 @@ class GaussianDiffusion1D(nn.Module):
         *,
         seq_length,
         timesteps = 1000,
-        sampling_timesteps = None,
+        sampling_timesteps = None, # If i change this, it will be ddim sampling. Not implemented yet.
         objective = 'pred_noise',
         beta_schedule = 'cosine',
         ddim_sampling_eta = 0.,
-        auto_normalize = True
+        auto_normalize = True,
+        class_dropout = 0.1,
     ):
         super().__init__()
         self.model = model
         self.channels = self.model.channels
+        self.classes = self.model.classes
+        self.class_dropout = class_dropout
         self.self_condition = self.model.self_condition
 
         self.seq_length = seq_length
@@ -515,6 +545,7 @@ class GaussianDiffusion1D(nn.Module):
 
         self.normalize = normalize_to_neg_one_to_one if auto_normalize else identity
         self.unnormalize = unnormalize_to_zero_to_one if auto_normalize else identity
+        self.dropout = nn.Dropout(p = class_dropout) # Will scale the output by 1/(1-p) during training, if there is more than one label pr. sample. Whiuch there isn't in this case.
 
     def predict_start_from_noise(self, x_t, t, noise):
         return (
@@ -549,8 +580,16 @@ class GaussianDiffusion1D(nn.Module):
         posterior_log_variance_clipped = extract(self.posterior_log_variance_clipped, t, x_t.shape)
         return posterior_mean, posterior_variance, posterior_log_variance_clipped
 
-    def model_predictions(self, x, t, x_self_cond = None, clip_x_start = False, rederive_pred_noise = False):
-        model_output = self.model(x, t, x_self_cond)
+    def model_predictions(self, x, t, cl, guide_w, x_self_cond = None, clip_x_start = False, rederive_pred_noise = False):
+        model_output = self.model(x, t, cl, x_self_cond)
+        guide_w = guide_w.unsqueeze(1).unsqueeze(2)
+
+        # For conditional generation, the model output is split into two parts, eps1 and eps2, which are combined with the guide_w parameter.
+        eps1, eps2 = model_output.chunk(2, dim = 0)
+        model_output = (1+guide_w)*eps1 - guide_w*eps2
+        x = x.chunk(2, dim = 0)[0]
+        t = t.chunk(2, dim = 0)[0]
+
         maybe_clip = partial(torch.clamp, min = -1., max = 1.) if clip_x_start else identity
 
         if self.objective == 'pred_noise':
@@ -574,9 +613,11 @@ class GaussianDiffusion1D(nn.Module):
 
         return ModelPrediction(pred_noise, x_start)
 
-    def p_mean_variance(self, x, t, x_self_cond = None, clip_denoised = True):
-        preds = self.model_predictions(x, t, x_self_cond)
+    def p_mean_variance(self, x, t, cl, guide_w, x_self_cond = None, clip_denoised = True):
+        preds = self.model_predictions(x, t, cl, guide_w, x_self_cond)
         x_start = preds.pred_x_start
+        x = x.chunk(2, dim = 0)[0]
+        t = t.chunk(2, dim = 0)[0]
 
         if clip_denoised:
             x_start.clamp_(-1., 1.)
@@ -585,30 +626,36 @@ class GaussianDiffusion1D(nn.Module):
         return model_mean, posterior_variance, posterior_log_variance, x_start
 
     @torch.no_grad()
-    def p_sample(self, x, t: int, x_self_cond = None, clip_denoised = True):
+    def p_sample(self, x, t: int, cl, guide_w, x_self_cond = None, clip_denoised = True):
         b, *_, device = *x.shape, x.device
         batched_times = torch.full((b,), t, device = x.device, dtype = torch.long)
-        model_mean, _, model_log_variance, x_start = self.p_mean_variance(x = x, t = batched_times, x_self_cond = x_self_cond, clip_denoised = clip_denoised)
-        noise = torch.randn_like(x) if t > 0 else 0. # no noise if t == 0
+        model_mean, _, model_log_variance, x_start = self.p_mean_variance(x = x, t = batched_times, cl = cl, guide_w=guide_w, x_self_cond = x_self_cond, clip_denoised = clip_denoised)
+        noise = torch.randn_like(x_start) if t > 0 else 0. # no noise if t == 0
         pred_img = model_mean + (0.5 * model_log_variance).exp() * noise
         return pred_img, x_start
 
     @torch.no_grad()
-    def p_sample_loop(self, shape):
+    def p_sample_loop(self, shape, cl, guide_w):
         batch, device = shape[0], self.betas.device
-
         img = torch.randn(shape, device=device)
-
+        cl = torch.tensor(cl, device=device, dtype = torch.long)
+        guide_w = torch.tensor(guide_w, device=device, dtype = torch.float32)
+        
+        if cl is not None:
+            assert batch == cl.shape[0] # As many labels given as there are samples.    
+            cl = torch.cat((cl, torch.zeros_like(cl)), dim = 0) # Concatenate the class labels with zeros for the second half of the batch. (unconditional generation)
+        
         x_start = None
 
         for t in tqdm(reversed(range(0, self.num_timesteps)), desc = 'sampling loop time step', total = self.num_timesteps):
             self_cond = x_start if self.self_condition else None
-            img, x_start = self.p_sample(img, t, self_cond)
+            img = img.repeat(2, 1, 1) # Double the batch size for the class label condition.
+            img, x_start = self.p_sample(img, t, cl, guide_w, self_cond)
 
         img = self.unnormalize(img)
         return img
 
-    @torch.no_grad()
+    @torch.no_grad() # Not implemented for class labeled data yet.
     def ddim_sample(self, shape, clip_denoised = True):
         batch, device, total_timesteps, sampling_timesteps, eta, objective = shape[0], self.betas.device, self.num_timesteps, self.sampling_timesteps, self.ddim_sampling_eta, self.objective
 
@@ -633,12 +680,12 @@ class GaussianDiffusion1D(nn.Module):
             alpha_next = self.alphas_cumprod[time_next]
 
             sigma = eta * ((1 - alpha / alpha_next) * (1 - alpha_next) / (1 - alpha)).sqrt()
-            c = (1 - alpha_next - sigma ** 2).sqrt()
+            c1 = (1 - alpha_next - sigma ** 2).sqrt()
 
             noise = torch.randn_like(img)
 
             img = x_start * alpha_next.sqrt() + \
-                  c * pred_noise + \
+                  c1 * pred_noise + \
                   sigma * noise
 
         img = self.unnormalize(img)
@@ -646,10 +693,12 @@ class GaussianDiffusion1D(nn.Module):
 
 
     @torch.no_grad()
-    def sample(self, batch_size = 16):
+    def sample(self, samples):
         seq_length, channels = self.seq_length, self.channels
+        batch_size = len(samples)
+        cl, guide_w = zip(*samples)
         sample_fn = self.p_sample_loop if not self.is_ddim_sampling else self.ddim_sample
-        return sample_fn((batch_size, channels, seq_length))
+        return sample_fn((batch_size, channels, seq_length), cl, guide_w)
 
     @torch.no_grad()
     def interpolate(self, x1, x2, t = None, lam = 0.5):
@@ -703,7 +752,6 @@ class GaussianDiffusion1D(nn.Module):
 
         num_positions = tensor.shape[1]
         num_lines = (num_positions + positions_per_line - 1) // positions_per_line
-        # print(f"Number of lines: {num_lines}")
         
         fig, axes = plt.subplots(num_lines, 1, figsize=(width, 5 * num_lines), squeeze=False)
         
@@ -747,7 +795,9 @@ class GaussianDiffusion1D(nn.Module):
         print(f"GIF saved at {output_gif_path}")
 
     @torch.no_grad()
-    def visualize_diffusion(self, x_start, t_values, folder, filename = "diffusion.fa", gif = False, positions_per_line = 100): # Could be more efficient
+    def visualize_diffusion(self, data_start, t_values, folder, filename = "diffusion.fa", gif = False, positions_per_line = 100): # Could be more efficient
+
+        x_start, c = data_start
 
         png_dir = str(folder) + "/" + "sequence_logo_pngs"
         output_gif_path = str(folder) + "/" + "diffusion.gif"
@@ -773,14 +823,12 @@ class GaussianDiffusion1D(nn.Module):
         if gif:
             p.start()
 
-    def p_losses(self, x_start, t, noise = None):
+    def p_losses(self, x_start, t, cl, noise = None):
         b, c, n = x_start.shape
         noise = default(noise, lambda: torch.randn_like(x_start))
 
         # noise sample
-        # print(x_start.max(), x_start.min())
         x = self.q_sample(x_start = x_start, t = t, noise = noise)
-        # print(x.max(), x.min())
 
         # if doing self-conditioning, 50% of the time, predict x_start from current set of times
         # and condition with unet with that
@@ -789,12 +837,12 @@ class GaussianDiffusion1D(nn.Module):
         x_self_cond = None
         if self.self_condition and random() < 0.5:
             with torch.no_grad():
-                x_self_cond = self.model_predictions(x, t).pred_x_start
+                x_self_cond = self.model_predictions(x, t, cl).pred_x_start
                 x_self_cond.detach_()
 
         # predict and take gradient step
 
-        model_out = self.model(x, t, x_self_cond)
+        model_out = self.model(x, t, cl, x_self_cond)
 
         if self.objective == 'pred_noise':
             target = noise
@@ -806,21 +854,20 @@ class GaussianDiffusion1D(nn.Module):
         else:
             raise ValueError(f'unknown objective {self.objective}')
 
-
-        # print(model_out[0].shape, target.shape)
         loss = F.mse_loss(model_out, target, reduction = 'none')
         loss = reduce(loss, 'b ... -> b', 'mean')
 
         loss = loss * extract(self.loss_weight, t, loss.shape)
         return loss.mean()
 
-    def forward(self, img, *args, **kwargs):
-        b, c, n, device, seq_length, = *img.shape, img.device, self.seq_length
+    def forward(self, img, cl, *args, **kwargs):
+        b, ch, n, device, seq_length, = *img.shape, img.device, self.seq_length
         assert n == seq_length, f'seq length must be {seq_length}'
         t = torch.randint(0, self.num_timesteps, (b,), device=device).long()
 
+        cl = self.dropout(cl.float()).long()
         img = self.normalize(img)
-        return self.p_losses(img, t, *args, **kwargs)
+        return self.p_losses(img, t, cl, *args, **kwargs)
 
 # trainer class
 
@@ -840,8 +887,8 @@ class Trainer1D(object):
         ema_decay = 0.995,
         adam_betas = (0.9, 0.99),
         save_and_sample_every = 1000,
-        num_samples = 25,
-        results_folder = './results_PKSs',
+        samples = [(0,0),(0,0.5),(0,2),(1,0),(1,0.5),(1,2),(2,0),(2,0.5),(2,2)], # [(class_label, guide_w), ...]
+        results_folder = './results',
         amp = False,
         mixed_precision_type = 'fp16',
         split_batches = True,
@@ -860,11 +907,13 @@ class Trainer1D(object):
 
         self.model = diffusion_model
         self.channels = diffusion_model.channels
+        self.classes = diffusion_model.classes
 
         # sampling and training hyperparameters
 
-        assert has_int_squareroot(num_samples), 'number of samples must have an integer square root'
-        self.num_samples = num_samples
+        assert has_int_squareroot(len(samples)), 'number of samples must have an integer square root'
+        self.samples = samples
+        self.num_samples = len(samples)
         self.save_and_sample_every = save_and_sample_every
 
         self.batch_size = train_batch_size
@@ -956,10 +1005,12 @@ class Trainer1D(object):
                 total_loss = 0.
 
                 for _ in range(self.gradient_accumulate_every):
-                    data = next(self.dl).to(device)
+                    data, cl = next(self.dl)
+                    data = data.to(device)
+                    cl = cl.to(device)
 
                     with self.accelerator.autocast():
-                        loss = self.model(data)
+                        loss = self.model(data, cl)
                         loss = loss / self.gradient_accumulate_every
                         total_loss += loss.item()
 
@@ -987,19 +1038,29 @@ class Trainer1D(object):
 
                         with torch.no_grad():
                             milestone = self.step // self.save_and_sample_every
-                            batches = num_to_groups(self.num_samples, self.batch_size)
-                            all_samples_list = list(map(lambda n: self.ema.ema_model.sample(batch_size=n), batches))
+                            num_samples = len(self.samples)
+                            batches = num_to_groups(num_samples, self.batch_size)
 
+                            # samples = [(cl1, guide_w1), (cl2, guide_w2), ...]
+                            # batches = [batch1, batch2, ...]
+
+                            samples = iter(self.samples)
+                            samples = [[next(samples) for _ in range(batch)] for batch in batches]
+                            
+                            all_samples_list = []
+                            for sample in samples:
+                                sample = self.ema.ema_model.sample(sample)
+                                all_samples_list.append(sample)                       
                         all_samples = torch.cat(all_samples_list, dim = 0)
 
                         # Save all samples as a FASTA file
                         all_seqs = one_hot_decode(all_samples)
-                        seq_record_list = [SeqRecord(Seq(seq), id=str(i), description='') for i, seq in enumerate(all_seqs)]
+                        seq_record_list = [SeqRecord(Seq(seq), id=str(i), description="classlabel: " + str(self.samples[i][0]) + " w: " + str(self.samples[i][1])) for i, seq in enumerate(all_seqs)]
                         with open( str(self.results_folder / f'sample-{milestone}.fa'), "w") as f:
                             SeqIO.write(seq_record_list, f, "fasta")
                         
                         # Save one sample as a logoplot PNG file
-                        p = Process(target=self.model.save_logo_plot, args=(all_samples[0].cpu().numpy(), f'{milestone}', self.results_folder, 100, 100, (-1,5), ['A', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'K', 'L', 'M', 'N', 'P', 'Q', 'R', 'S', 'T', 'V', 'W', 'Y']))
+                        p = Process(target=self.model.save_logo_plot, args=(all_samples[0].cpu().numpy(), f'{milestone}', self.results_folder, 100, 100, (-1,5)))
                         p.start()
 
                         quick_loss_plot(self.losses, "DDPM", str(self.results_folder / f'loss-{milestone}'))
