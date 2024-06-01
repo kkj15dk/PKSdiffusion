@@ -118,7 +118,7 @@ trainer = Trainer1D(
     ema_decay = 0.995,                # exponential moving average decay
     amp = True,                       # turn on mixed precision
     save_and_sample_every = 100000,
-    results_folder="./resultsTESTing",
+    results_folder="./resultsNRPS_labeled",
     samples=samples,
 )
 # trainer.load("1")
