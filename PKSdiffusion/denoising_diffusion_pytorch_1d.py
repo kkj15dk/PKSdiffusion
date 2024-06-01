@@ -1072,7 +1072,6 @@ class Trainer1D(object):
                         # Save some specific samples as a logoplot PNG file
                         for i, sample in enumerate(samples):
                             if sample[1] == 10:
-                                print('making logo of sample ' + str(i))
                                 p = Process(target=self.model.save_logo_plot, args=(all_samples[i].cpu().numpy(), f'{milestone}_cl_{sample[0]}_g_{sample[1]}', self.results_folder, 100, 100, (-1,5)))
                                 p.start()
 
