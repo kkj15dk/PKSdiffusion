@@ -1069,10 +1069,11 @@ class Trainer1D(object):
                         with open( str(self.results_folder / f'sample-{milestone}.fa'), "w") as f:
                             SeqIO.write(seq_record_list, f, "fasta")
                         
-
-                        # Save one sample as a logoplot PNG file
-                        p = Process(target=self.model.save_logo_plot, args=(all_samples[0].cpu().numpy(), f'{milestone}', self.results_folder, 100, 100, (-1,5)))
-                        p.start()
+                        # Save some specific samples as a logoplot PNG file
+                        for sample in all_samples:
+                            if sample[1] == 10
+                                p = Process(target=self.model.save_logo_plot, args=(sample.cpu().numpy(), f'{milestone}_cl_{sample[0]}_g_{sample[1]}', self.results_folder, 100, 100, (-1,5)))
+                                p.start()
 
                         quick_loss_plot(self.losses, "DDPM", str(self.results_folder / f'loss-{milestone}'))
                         # torch.save(all_samples, str(self.results_folder / f'sample-{milestone}.png'))
