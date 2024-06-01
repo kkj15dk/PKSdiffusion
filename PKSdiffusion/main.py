@@ -115,7 +115,7 @@ trainer = Trainer1D(
     diffusion,
     dataset = dataset,
     train_batch_size = 32,
-    train_lr = 8e-5, # 1e-5,
+    train_lr = 2e-5, # 1e-5,
     train_num_steps = 700000,         # total training steps
     gradient_accumulate_every = 2,    # gradient accumulation steps
     ema_decay = 0.995,                # exponential moving average decay
@@ -125,7 +125,7 @@ trainer = Trainer1D(
     samples=samples,
 )
 # trainer.load("1")
-diffusion.visualize_diffusion(next(iter(dataset)), [100*i for i in range(10)], trainer.results_folder, gif = False)
+diffusion.visualize_diffusion(next(iter(dataset)), [100*i for i in range(10)], trainer.results_folder, gif = True)
 trainer.train()
 
 # after a lot of training
