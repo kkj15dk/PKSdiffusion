@@ -36,10 +36,10 @@ if not test:
         seqs = []
         for record in train_record_aa:
             description = record.description.split('|')[-1]
-            if description in label_dict['labels']:
+            if description in label_dict:
                 seq = str(record.seq)
-                label = label_dict['labels'][description]['label']
-                seqs.append((seq, label))
+                cl = label_dict[description]['class']
+                seqs.append((seq, cl))
         print("There are " + str(len(seqs)) + " sequences in the dataset with correct labeling.")
         seqs = [seq for seq in seqs if set(seq[0]).issubset(characters)]
         print("There are " + str(len(seqs)) + " sequences when removing unimplemented amino acids.")
@@ -99,6 +99,9 @@ diffusion = GaussianDiffusion1D(
 # Create a Dataset
 # training_seq = torch.stack([one_hot_encode(seq, characters) for seq in seqs])
 # dataset = Dataset1D(training_seq)
+for i, seq in enumerate(seqs): # Check if all sequences have a label. If not, add the label 0 to them.
+    if len(seq) == 1:
+        seqs[i] = (seq[0], 0)
 dataset = MyIterDataset(OHEAAgen, seqs, len(seqs), characters, max_len)
 
 # loss = diffusion(training_seq)

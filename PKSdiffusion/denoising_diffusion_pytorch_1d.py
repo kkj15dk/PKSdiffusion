@@ -31,6 +31,7 @@ import pandas as pd
 import logomaker
 import imageio
 import os
+import json
 # from concurrent.futures import ProcessPoolExecutor
 
 # constants
@@ -1053,12 +1054,22 @@ class Trainer1D(object):
                                 all_samples_list.append(sample)                       
                         all_samples = torch.cat(all_samples_list, dim = 0)
 
+                        label_file = 'labels.json'
+                        with open(label_file, 'r') as f:
+                            labels = json.load(f)
+                        # Iterate over the dictionary
+                        def getarc(cl, data = labels):
+                            for key, value in data.items():
+                                if value['class'] == cl:
+                                    return value['architecture']
+
                         # Save all samples as a FASTA file
                         all_seqs = one_hot_decode(all_samples)
-                        seq_record_list = [SeqRecord(Seq(seq), id=str(i), description="classlabel: " + str(self.samples[i][0]) + " w: " + str(self.samples[i][1])) for i, seq in enumerate(all_seqs)]
+                        seq_record_list = [SeqRecord(Seq(seq), id=str(i), description="classlabel: " + str(self.samples[i][0]) + " w: " + str(self.samples[i][1]) + ' arc: ' + str(getarc(self.samples[i][0]))) for i, seq in enumerate(all_seqs)]
                         with open( str(self.results_folder / f'sample-{milestone}.fa'), "w") as f:
                             SeqIO.write(seq_record_list, f, "fasta")
                         
+
                         # Save one sample as a logoplot PNG file
                         p = Process(target=self.model.save_logo_plot, args=(all_samples[0].cpu().numpy(), f'{milestone}', self.results_folder, 100, 100, (-1,5)))
                         p.start()
