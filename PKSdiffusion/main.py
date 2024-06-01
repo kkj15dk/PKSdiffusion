@@ -20,7 +20,7 @@ model = Unet1D( # This UNET model cannot take in odd length inputs...
 
 print("Model parameters: ", count_parameters(model))
 
-test = True
+test = False
 alignment = False
 
 # aa_file = "clustalo_alignment.aln"

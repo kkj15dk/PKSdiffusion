@@ -1069,11 +1069,7 @@ class Trainer1D(object):
                         seq_record_list = [SeqRecord(Seq(seq), id=str(i), description="classlabel: " + str(self.samples[i][0]) + " w: " + str(self.samples[i][1]) + ' arc: ' + str(getarc(self.samples[i][0]))) for i, seq in enumerate(all_seqs)]
                         with open( str(self.results_folder / f'sample-{milestone}.fa'), "w") as f:
                             SeqIO.write(seq_record_list, f, "fasta")
-                        
-                        def save_logo_plot_wrapper(args):
-                            self.model.save_logo_plot(*args)
 
-                        
                         quick_loss_plot(self.losses, "DDPM", str(self.results_folder / f'loss-{milestone}'))
                         # torch.save(all_samples, str(self.results_folder / f'sample-{milestone}.png'))
                         self.save(milestone)
