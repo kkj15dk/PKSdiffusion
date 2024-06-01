@@ -109,7 +109,7 @@ dataset = MyIterDataset(OHEAAgen, seqs, len(seqs), characters, max_len)
 
 # Or using trainer
 num_classes = 20
-samples = [(cl,g) for cl in range(num_classes) for g in [0, 0.1, 1, 4, 10]]
+samples = [(cl,g) for cl in range(num_classes + 1) for g in [0, 0.1, 1, 4, 10]]
 
 trainer = Trainer1D(
     diffusion,
@@ -120,7 +120,7 @@ trainer = Trainer1D(
     gradient_accumulate_every = 2,    # gradient accumulation steps
     ema_decay = 0.995,                # exponential moving average decay
     amp = True,                       # turn on mixed precision
-    save_and_sample_every = 100000,
+    save_and_sample_every = 10000,
     results_folder="./resultsNRPS_labeled",
     samples=samples,
 )
