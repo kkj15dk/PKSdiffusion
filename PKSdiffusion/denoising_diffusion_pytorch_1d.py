@@ -743,10 +743,10 @@ class GaussianDiffusion1D(nn.Module):
         return x_noised
     
     @staticmethod
-    def save_logo_plot(tensor, idx, png_dir, positions_per_line, width = 100, ylim = (-1,10), amino_acids = ['A', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'K', 'L', 'M', 'N', 'P', 'Q', 'R', 'S', 'T', 'V', 'W', 'Y']):
+    def save_logo_plot(tensor, idx, png_dir_str, positions_per_line, width = 100, ylim = (-1,10), amino_acids = ['A', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'K', 'L', 'M', 'N', 'P', 'Q', 'R', 'S', 'T', 'V', 'W', 'Y']):
         assert tensor.ndim == 2
         
-        png_path = os.path.join(png_dir, f"sequence_logo_{idx}.png")
+        png_path = png_dir_str + '/' + f"sequence_logo_{idx}.png"
 
         if os.path.exists(png_path):
             return png_path
@@ -781,11 +781,12 @@ class GaussianDiffusion1D(nn.Module):
     def plot_sequence_logo_and_create_gif(self, tensor, positions_per_line, output_gif_path="sequence_logos.gif", png_dir = "sequence_logo_pngs"):
         
         os.makedirs(png_dir, exist_ok=True)
+
         
         png_files = []
         
         for idx, tensor in enumerate(tensor):
-            png_files.append(self.save_logo_plot(tensor, idx, png_dir, positions_per_line, positions_per_line, ylim=(-5,15)))
+            png_files.append(self.save_logo_plot(tensor, idx, str(png_dir), positions_per_line, positions_per_line, ylim=(-5,15)))
 
         # Create a GIF from the saved PNG files
         with imageio.get_writer(output_gif_path, mode='I', duration=0.5) as writer:
@@ -1046,12 +1047,12 @@ class Trainer1D(object):
                             # batches = [batch1, batch2, ...]
 
                             samples = iter(self.samples)
-                            samples = [[next(samples) for _ in range(batch)] for batch in batches]
+                            batched_samples = [[next(samples) for _ in range(batch)] for batch in batches]
                             
                             all_samples_list = []
-                            for sample in samples:
-                                sample = self.ema.ema_model.sample(sample)
-                                all_samples_list.append(sample)                       
+                            for batch in batched_samples:
+                                samples_output = self.ema.ema_model.sample(batch)
+                                all_samples_list.append(samples_output)                       
                         all_samples = torch.cat(all_samples_list, dim = 0)
 
                         label_file = 'labels.json'
@@ -1069,16 +1070,24 @@ class Trainer1D(object):
                         with open( str(self.results_folder / f'sample-{milestone}.fa'), "w") as f:
                             SeqIO.write(seq_record_list, f, "fasta")
                         
-                        # Save some specific samples as a logoplot PNG file
-                        for i, sample in enumerate(samples):
-                            if sample[1] == 10:
-                                print('making logo of sample ' + str(i))
-                                p = Process(target=self.model.save_logo_plot, args=(all_samples[i].cpu().numpy(), f'{milestone}_cl_{sample[0]}_g_{sample[1]}', self.results_folder, 100, 100, (-1,5)))
-                                p.start()
+                        def save_logo_plot_wrapper(args):
+                            self.model.save_logo_plot(*args)
 
+                        
                         quick_loss_plot(self.losses, "DDPM", str(self.results_folder / f'loss-{milestone}'))
                         # torch.save(all_samples, str(self.results_folder / f'sample-{milestone}.png'))
                         self.save(milestone)
+
+                        # Lastly save some specific samples as a logoplot PNG file
+                        folder = str(self.results_folder / f'logos-{milestone}')
+                        if not os.path.exists(folder):
+                            os.mkdir(folder)
+
+                        for i, sample in enumerate(self.samples):
+                            if sample[1] == 10: # making logo of all with guide_w = 10
+                                p = Process(target=self.model.save_logo_plot, args=(all_samples[i].cpu().numpy(), f'{milestone}_cl_{sample[0]}_w_{sample[1]}', folder, 100, 100, (-1,3)))
+                                p.start()
+                                p.join()
 
                 pbar.update(1)
 
