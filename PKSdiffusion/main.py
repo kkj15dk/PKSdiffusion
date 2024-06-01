@@ -112,12 +112,12 @@ trainer = Trainer1D(
     diffusion,
     dataset = dataset,
     train_batch_size = 32,
-    train_lr = 1e-4, # 1e-5,
-    train_num_steps = 10000,         # total training steps
+    train_lr = 8e-5, # 1e-5,
+    train_num_steps = 700000,         # total training steps
     gradient_accumulate_every = 2,    # gradient accumulation steps
     ema_decay = 0.995,                # exponential moving average decay
     amp = True,                       # turn on mixed precision
-    save_and_sample_every = 1000,
+    save_and_sample_every = 100000,
     results_folder="./resultsTESTing",
     samples=samples,
 )
