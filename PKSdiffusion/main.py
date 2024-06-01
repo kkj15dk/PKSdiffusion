@@ -107,15 +107,15 @@ trainer = Trainer1D(
     save_and_sample_every = 100000,
     results_folder="./resultsUNET_NRPS_mid",
 )
-trainer.load("1")
-diffusion.visualize_diffusion(next(iter(dataset)), [10*i for i in range(100)], trainer.results_folder, gif = True)
+trainer.load("5")
+diffusion.visualize_diffusion(next(iter(dataset)), [100*i for i in range(10)], trainer.results_folder, gif = True)
 trainer.train()
 
 # after a lot of training
 
 sampled_seqs = diffusion.sample(batch_size = 10)
 for i, seq in enumerate(sampled_seqs):
-    diffusion.save_logo_plot(seq.cpu().numpy(), i, trainer.results_folder, 100)
+    diffusion.save_logo_plot(seq.cpu().numpy(), "sample" + str(i), trainer.results_folder, 100)
 
 seqs = one_hot_decode(sampled_seqs, characters=characters)
 for seq in seqs:
