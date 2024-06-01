@@ -20,7 +20,7 @@ model = Unet1D( # This UNET model cannot take in odd length inputs...
 
 print("Model parameters: ", count_parameters(model))
 
-test = True
+test = False
 alignment = False
 
 # aa_file = "clustalo_alignment.aln"
@@ -109,7 +109,7 @@ dataset = MyIterDataset(OHEAAgen, seqs, len(seqs), characters, max_len)
 
 # Or using trainer
 num_classes = 20
-samples = [(cl,g) for cl in range(num_classes) for g in [0, 0.1, 1, 4, 10]]
+samples = [(cl,g) for cl in range(num_classes + 1) for g in [0, 0.1, 1, 4, 10]]
 
 trainer = Trainer1D(
     diffusion,
@@ -120,7 +120,7 @@ trainer = Trainer1D(
     gradient_accumulate_every = 2,    # gradient accumulation steps
     ema_decay = 0.995,                # exponential moving average decay
     amp = True,                       # turn on mixed precision
-    save_and_sample_every = 10,
+    save_and_sample_every = 10000,
     results_folder="./resultsNRPS_labeled",
     samples=samples,
 )
