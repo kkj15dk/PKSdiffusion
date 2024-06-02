@@ -20,7 +20,7 @@ model = Unet1D( # This UNET model cannot take in odd length inputs...
 
 print("Model parameters: ", count_parameters(model))
 
-test = False
+test = True
 alignment = False
 
 # aa_file = "clustalo_alignment.aln"
@@ -108,24 +108,28 @@ dataset = MyIterDataset(OHEAAgen, seqs, len(seqs), characters, max_len)
 # loss.backward()
 
 # Or using trainer
-num_classes = 20
-samples = [(cl,g) for cl in range(num_classes + 1) for g in [0, 0.1, 1, 4, 10]]
+if test:
+    num_classes = 2
+    samples = [(cl,g) for cl in range(num_classes + 1) for g in [0, 0.5, 2]]
+else:
+    num_classes = 20
+    samples = [(cl,g) for cl in range(num_classes + 1) for g in [0, 0.1, 1, 4, 10]]
 
 trainer = Trainer1D(
     diffusion,
     dataset = dataset,
     train_batch_size = 32,
-    train_lr = 2e-5, # 1e-5,
-    train_num_steps = 700000,         # total training steps
+    train_lr = 2e-5, # 8e-5,
+    train_num_steps = 100000,         # total training steps
     gradient_accumulate_every = 2,    # gradient accumulation steps
     ema_decay = 0.995,                # exponential moving average decay
     amp = True,                       # turn on mixed precision
     save_and_sample_every = 10000,
-    results_folder="./resultsNRPS_labeled",
+    results_folder="./resultsTEST_labeled",
     samples=samples,
 )
 # trainer.load("1")
-diffusion.visualize_diffusion(next(iter(dataset)), [100*i for i in range(10)], trainer.results_folder, gif = True)
+diffusion.visualize_diffusion(next(iter(dataset)), [10*i for i in range(100)], trainer.results_folder, gif = True)
 trainer.train()
 
 # after a lot of training
