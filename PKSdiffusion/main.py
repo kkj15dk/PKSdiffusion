@@ -128,16 +128,18 @@ trainer = Trainer1D(
     results_folder="./resultsTEST_labeled",
     samples=samples,
 )
-# trainer.load("1")
-diffusion.visualize_diffusion(next(iter(dataset)), [10*i for i in range(100)], trainer.results_folder, gif = True)
-trainer.train()
+trainer.load("9")
+# diffusion.visualize_diffusion(next(iter(dataset)), [10*i for i in range(100)], trainer.results_folder, gif = True)
+# trainer.train()
 
 # after a lot of training
 
-sampled_seqs = diffusion.sample(samples = samples)
-for i, seq in enumerate(sampled_seqs):
-    diffusion.save_logo_plot(seq.cpu().numpy(), "sample_" + str(i + 1), trainer.results_folder, 100)
+diffusion.sample_gif([(2,1)], folder = trainer.results_folder, num_processes = 12)
 
-seqs = one_hot_decode(sampled_seqs, characters=characters)
-for seq in seqs:
-    print(seq)
+# sampled_seqs = diffusion.sample(samples = samples)
+# for i, seq in enumerate(sampled_seqs):
+#     diffusion.save_logo_plot(seq.cpu().numpy(), "sample_" + str(i + 1), trainer.results_folder, 100)
+
+# seqs = one_hot_decode(sampled_seqs, characters=characters)
+# for seq in seqs:
+#     print(seq)

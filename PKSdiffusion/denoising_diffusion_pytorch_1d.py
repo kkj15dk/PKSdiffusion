@@ -3,7 +3,7 @@ from pathlib import Path
 from random import random
 from functools import partial
 from collections import namedtuple
-from multiprocessing import cpu_count, Process
+from multiprocessing import cpu_count, Process, Pool
 
 import torch
 from torch import nn, einsum, Tensor
@@ -79,6 +79,43 @@ def normalize_to_neg_one_to_one(img):
 
 def unnormalize_to_zero_to_one(t):
     return (t + 1) * 0.5
+
+def save_logo_plot_wrapper(args):
+    return save_logo_plot(*args)
+
+def save_logo_plot(tensor, idx, png_dir_str, positions_per_line, width = 100, ylim = (-1,10), amino_acids = ['A', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'K', 'L', 'M', 'N', 'P', 'Q', 'R', 'S', 'T', 'V', 'W', 'Y']):
+    assert tensor.ndim == 2
+    
+    png_path = png_dir_str + '/' + f"sequence_logo_{idx}.png"
+
+    if os.path.exists(png_path):
+        return png_path
+
+    num_positions = tensor.shape[1]
+    num_lines = (num_positions + positions_per_line - 1) // positions_per_line
+    
+    fig, axes = plt.subplots(num_lines, 1, figsize=(width, 5 * num_lines), squeeze=False)
+    
+    for line in range(num_lines):
+        start = line * positions_per_line
+        end = min(start + positions_per_line, num_positions)
+        df = pd.DataFrame(tensor.T[start:end], columns=amino_acids)
+        
+        logo = logomaker.Logo(df, ax=axes[line, 0])
+        logo.style_spines(visible=False)
+        logo.style_spines(spines=['left', 'bottom'], visible=True)
+        logo.ax.set_ylabel("Probability")
+        logo.ax.set_xlabel("Position")
+        logo.ax.set_ylim(*ylim)
+
+    plt.tight_layout()
+    plt.title(f"Sequence Logo for Tensor {idx}")
+
+    # Save the figure as a PNG file
+    plt.savefig(png_path)
+    plt.close(logo.fig)
+    
+    return png_path
 
 # data
 
@@ -636,7 +673,7 @@ class GaussianDiffusion1D(nn.Module):
         return pred_img, x_start
 
     @torch.no_grad()
-    def p_sample_loop(self, shape, cl, guide_w):
+    def p_sample_loop(self, shape, cl, guide_w, gif = False, time_resolution = 1):
         batch, device = shape[0], self.betas.device
         img = torch.randn(shape, device=device)
         cl = torch.tensor(cl, device=device, dtype = torch.long)
@@ -648,13 +685,25 @@ class GaussianDiffusion1D(nn.Module):
         
         x_start = None
 
-        for t in tqdm(reversed(range(0, self.num_timesteps)), desc = 'sampling loop time step', total = self.num_timesteps):
-            self_cond = x_start if self.self_condition else None
-            img = img.repeat(2, 1, 1) # Double the batch size for the class label condition.
-            img, x_start = self.p_sample(img, t, cl, guide_w, self_cond)
+        if gif:
+            img_list = []
+            for t in tqdm(reversed(range(0, self.num_timesteps)), desc = 'sampling loop time step', total = self.num_timesteps):
+                self_cond = x_start if self.self_condition else None
+                img = img.repeat(2, 1, 1)
+                img, x_start = self.p_sample(img, t, cl, guide_w, self_cond)
+                if t % time_resolution == 0:
+                    img_unnorm = self.unnormalize(img)
+                    img_list.append(img_unnorm)
+            diffusion_tensor = torch.stack(img_list)
+            diffusion_tensor = diffusion_tensor.permute(1, 0, 2, 3)
+        else:
+            for t in tqdm(reversed(range(0, self.num_timesteps)), desc = 'sampling loop time step', total = self.num_timesteps):
+                self_cond = x_start if self.self_condition else None
+                img = img.repeat(2, 1, 1) # Double the batch size for the class label condition.
+                img, x_start = self.p_sample(img, t, cl, guide_w, self_cond)
 
         img = self.unnormalize(img)
-        return img
+        return img, diffusion_tensor if gif else img
 
     @torch.no_grad() # Not implemented for class labeled data yet.
     def ddim_sample(self, shape, clip_denoised = True):
@@ -731,6 +780,29 @@ class GaussianDiffusion1D(nn.Module):
         )
     
     @torch.no_grad()
+    def sample_gif(self, samples, folder, num_processes = 10, time_resolution = 10):
+        seq_length, channels = self.seq_length, self.channels
+        batch_size = len(samples)
+        cl, w = zip(*samples)
+        sample_fn = self.p_sample_loop if not self.is_ddim_sampling else self.ddim_sample
+        tensor, diffusion_tensor = sample_fn((batch_size, channels, seq_length), cl, w, gif = True, time_resolution = time_resolution)
+        
+        gif_dir = str(folder) + '/' + f'sample_gif_{samples}'
+        pngs_dir = str(folder) + '/' + f'sample_gif_{samples}/pngs'
+        # Create and start a new process for the gif
+        for i, giftensor in enumerate(diffusion_tensor):
+            p = Process(target=self.plot_sequence_logo_and_create_gif, args=(giftensor.cpu().numpy(), 100, gif_dir + '/' + str(i) + '.gif', pngs_dir + str(i), num_processes))
+            p.start()
+            p.join()
+
+        seqs = one_hot_decode(tensor)
+        seq_record_list = [SeqRecord(Seq(seq), id=str('sample'), description=f"class label: {cl[i]} w: {w[i]}") for i, seq in enumerate(seqs)]
+
+        with open(str(folder) + "/" + f'sample_{samples}', "a") as f:
+            SeqIO.write(seq_record_list, f, "fasta")
+
+
+    @torch.no_grad()
     def get_noised_tensors(self, x_start, t): # Could be more efficient
         c, n, device = *x_start.shape, self.betas.device
         t = torch.tensor(t, device=device).long()
@@ -741,53 +813,20 @@ class GaussianDiffusion1D(nn.Module):
         x_noised = self.unnormalize(x_noised)
         
         return x_noised
-    
-    @staticmethod
-    def save_logo_plot(tensor, idx, png_dir_str, positions_per_line, width = 100, ylim = (-1,10), amino_acids = ['A', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'K', 'L', 'M', 'N', 'P', 'Q', 'R', 'S', 'T', 'V', 'W', 'Y']):
-        assert tensor.ndim == 2
-        
-        png_path = png_dir_str + '/' + f"sequence_logo_{idx}.png"
-
-        if os.path.exists(png_path):
-            return png_path
-
-        num_positions = tensor.shape[1]
-        num_lines = (num_positions + positions_per_line - 1) // positions_per_line
-        
-        fig, axes = plt.subplots(num_lines, 1, figsize=(width, 5 * num_lines), squeeze=False)
-        
-        for line in range(num_lines):
-            start = line * positions_per_line
-            end = min(start + positions_per_line, num_positions)
-            df = pd.DataFrame(tensor.T[start:end], columns=amino_acids)
-            
-            logo = logomaker.Logo(df, ax=axes[line, 0])
-            logo.style_spines(visible=False)
-            logo.style_spines(spines=['left', 'bottom'], visible=True)
-            logo.ax.set_ylabel("Probability")
-            logo.ax.set_xlabel("Position")
-            logo.ax.set_ylim(*ylim)
-
-        plt.tight_layout()
-        plt.title(f"Sequence Logo for Tensor {idx}")
-
-        # Save the figure as a PNG file
-        plt.savefig(png_path)
-        plt.close(logo.fig)
-        
-        return png_path
 
     @torch.no_grad()
-    def plot_sequence_logo_and_create_gif(self, tensor, positions_per_line, output_gif_path="sequence_logos.gif", png_dir = "sequence_logo_pngs"):
-        
+    def plot_sequence_logo_and_create_gif(self, tensor, positions_per_line, output_gif_path="sequence_logos.gif", png_dir = "sequence_logo_pngs", num_processes = 10):
+
         os.makedirs(png_dir, exist_ok=True)
 
-        
-        png_files = []
-        
-        for idx, tensor in enumerate(tensor):
-            png_files.append(self.save_logo_plot(tensor, idx, str(png_dir), positions_per_line, positions_per_line, ylim=(-5,15)))
-
+        # Create a multiprocessing Pool
+        with Pool(processes=num_processes) as pool:
+            # Prepare the arguments for each function call
+            args_list = [(tensor, idx, str(png_dir), positions_per_line, positions_per_line, (-5,15)) for idx, tensor in enumerate(tensor)]
+            
+            # Use map to apply the function to the arguments in parallel
+            png_files = pool.map(save_logo_plot_wrapper, args_list)
+            
         # Create a GIF from the saved PNG files
         with imageio.get_writer(output_gif_path, mode='I', duration=0.5) as writer:
             for png_file in png_files:
@@ -797,14 +836,13 @@ class GaussianDiffusion1D(nn.Module):
         print(f"GIF saved at {output_gif_path}")
 
     @torch.no_grad()
-    def visualize_diffusion(self, data_start, t_values, folder, filename = "diffusion.fa", gif = False, positions_per_line = 100): # Could be more efficient
+    def visualize_diffusion(self, data_start, t_values, folder, filename = "diffusion.fa", gif = False, positions_per_line = 100, num_processes = 10): # Could be more efficient
 
         x_start, c = data_start
 
         png_dir = str(folder) + "/" + "sequence_logo_pngs"
         output_gif_path = str(folder) + "/" + "diffusion.gif"
 
-        tensor_list = []
         seq_record_list = []
         # Clear the file
         with open(str(folder) + "/" + filename, "w") as f:
@@ -820,7 +858,7 @@ class GaussianDiffusion1D(nn.Module):
             SeqIO.write(seq_record_list, f, "fasta")
 
         # Create and start a new process for the gif
-        p = Process(target=self.plot_sequence_logo_and_create_gif, args=(x_noised.cpu().numpy(), positions_per_line, output_gif_path, png_dir))
+        p = Process(target=self.plot_sequence_logo_and_create_gif, args=(x_noised.cpu().numpy(), positions_per_line, output_gif_path, png_dir, num_processes))
         
         if gif:
             p.start()
@@ -1080,10 +1118,10 @@ class Trainer1D(object):
                             os.mkdir(folder)
 
                         for i, sample in enumerate(self.samples):
-                            if sample[1] == 10: # making logo of all with guide_w = 10
-                                p = Process(target=self.model.save_logo_plot, args=(all_samples[i].cpu().numpy(), f'{milestone}_cl_{sample[0]}_w_{sample[1]}', folder, 100, 100, (-1,3)))
-                                p.start()
-                                p.join()
+                            # if sample[1] == 10: # making logo of all with guide_w = 10
+                            p = Process(target=save_logo_plot, args=(all_samples[i].cpu().numpy(), f'{milestone}_cl_{sample[0]}_w_{sample[1]}', folder, 100, 100, (-1,3)))
+                            p.start()
+                            p.join()
 
                 pbar.update(1)
 
