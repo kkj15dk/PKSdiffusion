@@ -5,6 +5,10 @@ from functools import partial
 from collections import namedtuple
 from multiprocessing import cpu_count, Process, Pool
 
+import traceback
+import gc
+from memory_profiler import profile
+
 import torch
 from torch import nn, einsum, Tensor
 import torch.nn.functional as F
@@ -13,7 +17,6 @@ from torch.optim import Adam
 from torch.utils.data import Dataset, DataLoader
 
 from einops import rearrange, reduce
-from einops.layers.torch import Rearrange
 
 from accelerate import Accelerator, DataLoaderConfiguration
 from ema_pytorch import EMA
@@ -23,13 +26,14 @@ from tqdm.auto import tqdm
 from Bio import SeqIO
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
-from utils import one_hot_decode, quick_loss_plot
+from utils import one_hot_decode, quick_loss_plot, collate_fn
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import logomaker
 import imageio
+from PIL import Image
 import os
 import json
 # from concurrent.futures import ProcessPoolExecutor
@@ -80,18 +84,35 @@ def normalize_to_neg_one_to_one(img):
 def unnormalize_to_zero_to_one(t):
     return (t + 1) * 0.5
 
+# Plotting samples from the model
+
 def save_logo_plot_wrapper(args):
-    return save_logo_plot(*args)
+    try:
+        # Your existing code here
+        return save_logo_plot(*args)
+    except Exception as e:
+        print(f"An error occurred in worker process: {e}")
+        traceback.print_exc()  # This will print the stack trace
 
-def save_logo_plot(tensor, idx, png_dir_str, positions_per_line, width = 100, ylim = (-1,10), amino_acids = ['A', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'K', 'L', 'M', 'N', 'P', 'Q', 'R', 'S', 'T', 'V', 'W', 'Y']):
-    assert tensor.ndim == 2
+@torch.no_grad()
+def save_logo_plot(array, label:str, png_dir_str:str, positions_per_line:int, width:int = 100, ylim:tuple = (-1,3), dpi:int = 100, characters:str = "ACDEFGHIKLMNPQRSTVWY-"):
+    assert array.ndim == 2
+
+    if not os.path.exists(png_dir_str):
+        os.makedirs(png_dir_str)
+
+    amino_acids = list(characters)
+
+    if amino_acids[-1] == '-':
+        amino_acids = amino_acids[:-1]
+        array = array[:-1, :]
     
-    png_path = png_dir_str + '/' + f"sequence_logo_{idx}.png"
+    png_path = png_dir_str + '/' + f"sequence_logo_{label}.png"
 
-    if os.path.exists(png_path):
+    if os.path.exists(png_path): # If the file already exists, return the path.
         return png_path
 
-    num_positions = tensor.shape[1]
+    num_positions = array.shape[1]
     num_lines = (num_positions + positions_per_line - 1) // positions_per_line
     
     fig, axes = plt.subplots(num_lines, 1, figsize=(width, 5 * num_lines), squeeze=False)
@@ -99,7 +120,7 @@ def save_logo_plot(tensor, idx, png_dir_str, positions_per_line, width = 100, yl
     for line in range(num_lines):
         start = line * positions_per_line
         end = min(start + positions_per_line, num_positions)
-        df = pd.DataFrame(tensor.T[start:end], columns=amino_acids)
+        df = pd.DataFrame(array.T[start:end], columns=amino_acids)
         
         logo = logomaker.Logo(df, ax=axes[line, 0])
         logo.style_spines(visible=False)
@@ -109,13 +130,49 @@ def save_logo_plot(tensor, idx, png_dir_str, positions_per_line, width = 100, yl
         logo.ax.set_ylim(*ylim)
 
     plt.tight_layout()
-    plt.title(f"Sequence Logo for Tensor {idx}")
+    plt.title(f"Sequence Logo for Tensor: {label}")
 
     # Save the figure as a PNG file
-    plt.savefig(png_path)
+    plt.savefig(png_path, dpi = dpi)
     plt.close(logo.fig)
+    plt.close(fig)
+    del logo
+    del axes
+    del fig
+    gc.collect()  # Force garbage collection
     
     return png_path
+
+@torch.no_grad()
+def plot_sequence_logo_and_create_gif(tensor_cpu_numpy, positions_per_line, ylim = (-5,15), dpi = 100, output_gif_path="sequence_logos.gif", png_dir = "sequence_logo_pngs", num_processes = 10):
+
+    if not os.path.exists(png_dir):
+        os.makedirs(png_dir)
+
+    # Create a multiprocessing Pool
+    with Pool(processes=num_processes) as pool:
+        # Prepare the arguments for each function call
+        def args_generator():
+            for idx, tensor in enumerate(tensor_cpu_numpy):
+                yield (tensor, idx, str(png_dir), positions_per_line, positions_per_line, ylim, dpi)
+
+        # Use map to apply the function to the arguments in parallel
+        png_files = pool.map(save_logo_plot_wrapper, args_generator())
+        
+    # Create a GIF from the saved PNG files
+    with imageio.get_writer(output_gif_path, mode='I', duration=0.5) as writer:
+        for png_file in png_files:
+            try:
+                image = Image.open(png_file)
+                writer.append_data(np.array(image))
+                print(f"Appended image {png_file} to GIF")
+            except Exception as e:
+                print(f"Error opening and appending image {png_file} to GIF: {e}")
+            image.close()
+            del image
+            gc.collect()  # Force garbage collection
+
+    print(f"GIF saved at {output_gif_path}")
 
 # data
 
@@ -319,7 +376,7 @@ class Unet1D(nn.Module):
         init_dim = None,
         out_dim = None,
         dim_mults=(1, 2, 4, 8),
-        channels = 3,
+        channels = 20,
         classes = 2,
         self_condition = False,
         resnet_block_groups = 8,
@@ -492,7 +549,7 @@ class GaussianDiffusion1D(nn.Module):
         self,
         model,
         *,
-        seq_length,
+        max_seq_length,
         timesteps = 1000,
         sampling_timesteps = None, # If i change this, it will be ddim sampling. Not implemented yet.
         objective = 'pred_noise',
@@ -508,7 +565,7 @@ class GaussianDiffusion1D(nn.Module):
         self.class_dropout = class_dropout
         self.self_condition = self.model.self_condition
 
-        self.seq_length = seq_length
+        self.max_seq_length = max_seq_length
 
         self.objective = objective
 
@@ -687,7 +744,7 @@ class GaussianDiffusion1D(nn.Module):
 
         if gif:
             img_list = []
-            for t in tqdm(reversed(range(0, self.num_timesteps)), desc = 'sampling loop time step', total = self.num_timesteps):
+            for t in tqdm(reversed(range(0, self.num_timesteps)), desc = 'sampling loop time step for gif', total = self.num_timesteps):
                 self_cond = x_start if self.self_condition else None
                 img = img.repeat(2, 1, 1)
                 img, x_start = self.p_sample(img, t, cl, guide_w, self_cond)
@@ -701,9 +758,10 @@ class GaussianDiffusion1D(nn.Module):
                 self_cond = x_start if self.self_condition else None
                 img = img.repeat(2, 1, 1) # Double the batch size for the class label condition.
                 img, x_start = self.p_sample(img, t, cl, guide_w, self_cond)
-
+        
         img = self.unnormalize(img)
-        return img, diffusion_tensor if gif else img
+
+        return (img, diffusion_tensor) if gif else img
 
     @torch.no_grad() # Not implemented for class labeled data yet.
     def ddim_sample(self, shape, clip_denoised = True):
@@ -741,10 +799,9 @@ class GaussianDiffusion1D(nn.Module):
         img = self.unnormalize(img)
         return img
 
-
     @torch.no_grad()
-    def sample(self, samples):
-        seq_length, channels = self.seq_length, self.channels
+    def sample(self, samples, seq_length = 40): # By default sequences of length 40 are sampled.
+        channels = self.channels
         batch_size = len(samples)
         cl, guide_w = zip(*samples)
         sample_fn = self.p_sample_loop if not self.is_ddim_sampling else self.ddim_sample
@@ -771,36 +828,40 @@ class GaussianDiffusion1D(nn.Module):
         return img
 
     @autocast(enabled = False)
-    def q_sample(self, x_start, t, noise=None):
+    def q_sample(self, x_start, t, noise=None, mask = None):
         noise = default(noise, lambda: torch.randn_like(x_start))
+        if mask is not None:
+            noise = noise * mask
 
         return (
             extract(self.sqrt_alphas_cumprod, t, x_start.shape) * x_start +
             extract(self.sqrt_one_minus_alphas_cumprod, t, x_start.shape) * noise
         )
-    
+
     @torch.no_grad()
-    def sample_gif(self, samples, folder, num_processes = 10, time_resolution = 10):
-        seq_length, channels = self.seq_length, self.channels
+    def sample_gif(self, samples, seq_len = 40, folder = 'gif', num_processes = 10, time_resolution = 100, ylim = (-3,7), dpi = 50):
+        channels = self.channels
         batch_size = len(samples)
         cl, w = zip(*samples)
         sample_fn = self.p_sample_loop if not self.is_ddim_sampling else self.ddim_sample
-        tensor, diffusion_tensor = sample_fn((batch_size, channels, seq_length), cl, w, gif = True, time_resolution = time_resolution)
-        
+        tensor, diffusion_tensor = sample_fn((batch_size, channels, seq_len), cl, w, gif = True, time_resolution = time_resolution)
+
         gif_dir = str(folder) + '/' + f'sample_gif_{samples}'
         pngs_dir = str(folder) + '/' + f'sample_gif_{samples}/pngs'
-        # Create and start a new process for the gif
-        for i, giftensor in enumerate(diffusion_tensor):
-            p = Process(target=self.plot_sequence_logo_and_create_gif, args=(giftensor.cpu().numpy(), 100, gif_dir + '/' + str(i) + '.gif', pngs_dir + str(i), num_processes))
-            p.start()
-            p.join()
 
         seqs = one_hot_decode(tensor)
         seq_record_list = [SeqRecord(Seq(seq), id=str('sample'), description=f"class label: {cl[i]} w: {w[i]}") for i, seq in enumerate(seqs)]
 
-        with open(str(folder) + "/" + f'sample_{samples}', "a") as f:
-            SeqIO.write(seq_record_list, f, "fasta")
+        fasta_file = gif_dir + '/' + f'sample_{samples}.fa'
+        if not os.path.exists(fasta_file):
+            with open(fasta_file, "a") as f:
+                SeqIO.write(seq_record_list, f, "fasta")
 
+        # Create and start a new process for the gif
+        for i, giftensor in enumerate(diffusion_tensor):
+            p = Process(target=plot_sequence_logo_and_create_gif, args=(giftensor.cpu().numpy(), 100, ylim, dpi, gif_dir + '/' + str(i) + '.gif', pngs_dir + str(i), num_processes))
+            p.start()
+            p.join()
 
     @torch.no_grad()
     def get_noised_tensors(self, x_start, t): # Could be more efficient
@@ -815,28 +876,7 @@ class GaussianDiffusion1D(nn.Module):
         return x_noised
 
     @torch.no_grad()
-    def plot_sequence_logo_and_create_gif(self, tensor, positions_per_line, output_gif_path="sequence_logos.gif", png_dir = "sequence_logo_pngs", num_processes = 10):
-
-        os.makedirs(png_dir, exist_ok=True)
-
-        # Create a multiprocessing Pool
-        with Pool(processes=num_processes) as pool:
-            # Prepare the arguments for each function call
-            args_list = [(tensor, idx, str(png_dir), positions_per_line, positions_per_line, (-5,15)) for idx, tensor in enumerate(tensor)]
-            
-            # Use map to apply the function to the arguments in parallel
-            png_files = pool.map(save_logo_plot_wrapper, args_list)
-            
-        # Create a GIF from the saved PNG files
-        with imageio.get_writer(output_gif_path, mode='I', duration=0.5) as writer:
-            for png_file in png_files:
-                image = imageio.imread(png_file)
-                writer.append_data(image)
-
-        print(f"GIF saved at {output_gif_path}")
-
-    @torch.no_grad()
-    def visualize_diffusion(self, data_start, t_values, folder, filename = "diffusion.fa", gif = False, positions_per_line = 100, num_processes = 10): # Could be more efficient
+    def visualize_diffusion(self, data_start, t_values, folder, filename = "diffusion.fa", gif = False, positions_per_line = 100, num_processes = 10, dpi = 100, ylim = (-7,10)): # Could be more efficient
 
         x_start, c = data_start
 
@@ -858,17 +898,17 @@ class GaussianDiffusion1D(nn.Module):
             SeqIO.write(seq_record_list, f, "fasta")
 
         # Create and start a new process for the gif
-        p = Process(target=self.plot_sequence_logo_and_create_gif, args=(x_noised.cpu().numpy(), positions_per_line, output_gif_path, png_dir, num_processes))
+        p = Process(target=plot_sequence_logo_and_create_gif, args=(x_noised.cpu().numpy(), positions_per_line, ylim, dpi, output_gif_path, png_dir, num_processes))
         
-        if gif:
+        if gif and not os.path.exists(output_gif_path):
             p.start()
 
-    def p_losses(self, x_start, t, cl, noise = None):
+    def p_losses(self, x_start, t, cl, mask = None, noise = None):
         b, c, n = x_start.shape
         noise = default(noise, lambda: torch.randn_like(x_start))
 
         # noise sample
-        x = self.q_sample(x_start = x_start, t = t, noise = noise)
+        x = self.q_sample(x_start = x_start, t = t, noise = noise, mask=mask)
 
         # if doing self-conditioning, 50% of the time, predict x_start from current set of times
         # and condition with unet with that
@@ -895,19 +935,25 @@ class GaussianDiffusion1D(nn.Module):
             raise ValueError(f'unknown objective {self.objective}')
 
         loss = F.mse_loss(model_out, target, reduction = 'none')
-        loss = reduce(loss, 'b ... -> b', 'mean')
+        loss = loss * mask
+        mask_sum = reduce(mask, 'b ... -> b', 'sum') * c
+        loss_sum = reduce(loss, 'b ... -> b', 'sum')
+        loss = loss_sum / mask_sum
 
         loss = loss * extract(self.loss_weight, t, loss.shape)
-        return loss.mean()
 
-    def forward(self, img, cl, *args, **kwargs):
-        b, ch, n, device, seq_length, = *img.shape, img.device, self.seq_length
-        assert n == seq_length, f'seq length must be {seq_length}'
+        # loss = (loss * mask_sum).sum() / mask_sum.sum()
+
+        return loss.mean() # Without taking into account sample length, all samples of a batch are weighted equally.
+
+    def forward(self, img, mask, cl, *args, **kwargs):
+        b, c, n, device, seq_length, = *img.shape, img.device, self.max_seq_length
+        assert n <= seq_length, f'seq length must be less than {seq_length}'
         t = torch.randint(0, self.num_timesteps, (b,), device=device).long()
 
         cl = self.dropout(cl.float()).long()
         img = self.normalize(img)
-        return self.p_losses(img, t, cl, *args, **kwargs)
+        return self.p_losses(img, t, cl, mask, *args, **kwargs)
 
 # trainer class
 
@@ -928,11 +974,14 @@ class Trainer1D(object):
         adam_betas = (0.9, 0.99),
         save_and_sample_every = 1000,
         samples = [(0,0),(0,0.5),(0,2),(1,0),(1,0.5),(1,2),(2,0),(2,0.5),(2,2)], # [(class_label, guide_w), ...]
+        sample_len = 40,
         results_folder = './results',
+        labels_file = './labels.json',
+        characters="ACDEFGHIKLMNPQRSTVWY-",
         amp = False,
         mixed_precision_type = 'fp16',
         split_batches = True,
-        max_grad_norm = 1.
+        max_grad_norm = 1.,
     ):
         super().__init__()
 
@@ -953,6 +1002,9 @@ class Trainer1D(object):
 
         assert has_int_squareroot(len(samples)), 'number of samples must have an integer square root'
         self.samples = samples
+        self.sample_len = sample_len
+        self.labels_file = labels_file
+        self.characters = characters
         self.num_samples = len(samples)
         self.save_and_sample_every = save_and_sample_every
 
@@ -965,7 +1017,7 @@ class Trainer1D(object):
         # dataset and dataloader
 
         # dl = DataLoader(dataset, batch_size = train_batch_size, shuffle = True, pin_memory = True, num_workers = cpu_count())
-        dl = DataLoader(dataset, batch_size = train_batch_size, pin_memory = True, num_workers = 4) # cpu_count())
+        dl = DataLoader(dataset, collate_fn=collate_fn, batch_size = train_batch_size, pin_memory = True, num_workers = 4) # cpu_count())
 
         dl = self.accelerator.prepare(dl)
         self.dl = cycle(dl)
@@ -1045,12 +1097,13 @@ class Trainer1D(object):
                 total_loss = 0.
 
                 for _ in range(self.gradient_accumulate_every):
-                    data, cl = next(self.dl)
+                    data, mask, cl = next(self.dl)
                     data = data.to(device)
+                    mask = mask.to(device)
                     cl = cl.to(device)
 
                     with self.accelerator.autocast():
-                        loss = self.model(data, cl)
+                        loss = self.model(data, mask, cl)
                         loss = loss / self.gradient_accumulate_every
                         total_loss += loss.item()
 
@@ -1089,12 +1142,11 @@ class Trainer1D(object):
                             
                             all_samples_list = []
                             for batch in batched_samples:
-                                samples_output = self.ema.ema_model.sample(batch)
-                                all_samples_list.append(samples_output)                       
+                                samples_output = self.ema.ema_model.sample(batch, seq_length = self.sample_len)
+                                all_samples_list.append(samples_output)
                         all_samples = torch.cat(all_samples_list, dim = 0)
 
-                        label_file = 'labels.json'
-                        with open(label_file, 'r') as f:
+                        with open(self.labels_file, 'r') as f:
                             labels = json.load(f)
                         # Iterate over the dictionary
                         def getarc(cl, data = labels):
@@ -1103,7 +1155,7 @@ class Trainer1D(object):
                                     return value['architecture']
 
                         # Save all samples as a FASTA file
-                        all_seqs = one_hot_decode(all_samples)
+                        all_seqs = one_hot_decode(all_samples, characters = self.characters)
                         seq_record_list = [SeqRecord(Seq(seq), id=str(i), description="classlabel: " + str(self.samples[i][0]) + " w: " + str(self.samples[i][1]) + ' arc: ' + str(getarc(self.samples[i][0]))) for i, seq in enumerate(all_seqs)]
                         with open( str(self.results_folder / f'sample-{milestone}.fa'), "w") as f:
                             SeqIO.write(seq_record_list, f, "fasta")
@@ -1114,8 +1166,6 @@ class Trainer1D(object):
 
                         # Lastly save some specific samples as a logoplot PNG file
                         folder = str(self.results_folder / f'logos-{milestone}')
-                        if not os.path.exists(folder):
-                            os.mkdir(folder)
 
                         for i, sample in enumerate(self.samples):
                             # if sample[1] == 10: # making logo of all with guide_w = 10
@@ -1126,3 +1176,7 @@ class Trainer1D(object):
                 pbar.update(1)
 
         accelerator.print('training complete')
+
+if __name__ == '__main__':
+    pass
+    # print

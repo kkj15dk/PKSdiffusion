@@ -1,0 +1,19 @@
+# Prepocessing
+- Padding not randomly in each end
+- Padding with '-' character vs with zeros
+
+# Dataloader
+- Padding and masking in dataloader
+
+# Model
+- Masking layer
+- Masking not part of loss calculation
+
+# Sampling
+- Sampling with differnet lengths, resolution of 4 bp
+
+# Long term
+- Inpianting
+- CLIP model for proteins
+- VAE for downscaling proteins, then diffusion, then upscaling (like stable diffusion)
+- KAN vs MLP

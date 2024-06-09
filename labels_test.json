@@ -1,0 +1,12 @@
+{
+    "1": {
+        "class": 1,
+        "architecture": "no ACDE",
+        "example": "no ACDE"
+    },
+    "2": {
+        "class": 2,
+        "architecture": "ACDE",
+        "example": "ACDE"
+    }
+}
