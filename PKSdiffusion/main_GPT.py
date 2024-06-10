@@ -1,21 +1,20 @@
 from denoising_diffusion_pytorch_1d import Unet1D, GaussianDiffusion1D, Trainer1D, save_logo_plot
 from utils import *
+from GPT2 import GPT2, GPTConfig
 
 seed = 42
 set_seed(seed) # set the random seed
 print("seed set as " + str(seed))
 
-model = Unet1D( # This UNET model cannot take in odd length inputs...
-    dim = 64, # 64
-    dim_mults = (1, 2, 4, 8),
-    channels = 21,
-    learned_sinusoidal_cond=True,
-    random_fourier_features=True,
+config = GPTConfig(
+    max_len = 1800,
 )
+
+model = GPT2(config)
 
 print("Model parameters: ", count_parameters(model))
 
-test = False
+test = True
 varying_length = True
 varying_length_resolution = 8
 
@@ -71,19 +70,19 @@ trainer = Trainer1D(
     diffusion,
     dataset = dataset,
     train_batch_size = 32,
-    train_lr = 8e-5, # 8e-5,
+    train_lr = 2e-5, # 8e-5,
     train_num_steps = 30000,         # total training steps
     gradient_accumulate_every = 2,    # gradient accumulation steps
     ema_decay = 0.995,                # exponential moving average decay
     amp = True,                       # turn on mixed precision
     save_and_sample_every = 1000,
-    results_folder="./resultsNRPS_masked",
+    results_folder="./resultsTEST_GPT2",
     samples=samples,
-    sample_len=1600,
+    sample_len=48,
     labels_file=labels_file,
     characters=characters,
 )
-trainer.load("10")
+# trainer.load("10")
 diffusion.visualize_diffusion(next(iter(dataset)), [10*i for i in range(100)], trainer.results_folder, gif = False)
 trainer.train()
 

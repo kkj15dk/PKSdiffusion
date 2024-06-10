@@ -187,7 +187,6 @@ def get_mask(seq, length):
     mask = torch.ones(length)
     mask[seq.size(1):] = 0
     seq = torch.cat((seq, torch.zeros((seq.size(0), length - seq.size(1)))), dim=1)
-    mask = mask.unsqueeze(0)
     return seq, mask
 
 # Description: Generate random amino acid sequences for testing
