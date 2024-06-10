@@ -4,3 +4,4 @@ results*
 testing*
 denoising-diffusion-pytorch/
 PKSdiffusion/__pycache__/*
+*.png
