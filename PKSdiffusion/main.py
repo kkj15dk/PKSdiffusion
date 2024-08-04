@@ -1,21 +1,19 @@
 from denoising_diffusion_pytorch_1d import Unet1D, GaussianDiffusion1D, Trainer1D, save_logo_plot
 from utils import *
 
-seed = 42
+seed = 2
 set_seed(seed) # set the random seed
-print("seed set as " + str(seed))
 
 model = Unet1D( # This UNET model cannot take in odd length inputs...
-    dim = 128, # 64
+    dim = 128, #64,
     dim_mults = (1, 2, 4, 8),
     channels = 21,
     learned_sinusoidal_cond=True,
     random_fourier_features=True,
 )
+count_parameters(model)
 
-print("Model parameters: ", count_parameters(model))
-
-test = False
+test = True
 varying_length = True
 varying_length_resolution = 8
 
@@ -76,22 +74,25 @@ trainer = Trainer1D(
     gradient_accumulate_every = 2,    # gradient accumulation steps
     ema_decay = 0.995,                # exponential moving average decay
     amp = True,                       # turn on mixed precision
-    save_and_sample_every = 100000,
-    results_folder="./resultsNRPS_masked",
+    save_and_sample_every = 40000,
+    results_folder="./resultsHPC_NRPS_masked",
     samples=samples,
     sample_len=1600,
     labels_file=labels_file,
     characters=characters,
 )
-# trainer.load("10")
-diffusion.visualize_diffusion(next(iter(dataset)), [10*i for i in range(100)], trainer.results_folder, gif = False)
-trainer.train()
+trainer.load("6")
+diffusion.visualize_diffusion(next(iter(dataset)), [50*i for i in range(20)], trainer.results_folder, gif = True, dpi = 20)
+# trainer.train()
 
 # after a lot of training
 
-# diffusion.sample_gif([(0,10)], seq_len = 1800, folder = trainer.results_folder, num_processes = 4, time_resolution = 50, ylim = (-3, 7), dpi = 20)
-# diffusion.sample_gif([(1,10)], seq_len = 800, folder = trainer.results_folder, num_processes = 4, time_resolution = 50, ylim = (-3, 7), dpi = 20)
-# diffusion.sample_gif([(2,10)], seq_len = 160, folder = trainer.results_folder, num_processes = 4, time_resolution = 50, ylim = (-3, 7), dpi = 20)
+# diffusion.sample_gif([(0,0)], seq_len = 1800, folder = trainer.results_folder, num_processes = 4, time_resolution = 50, ylim = (-3, 7), dpi = 20)
+# diffusion.sample_gif([(1,10)], seq_len = 1160, folder = trainer.results_folder, num_processes = 4, time_resolution = 50, ylim = (-3, 7), dpi = 20)
+# diffusion.sample_gif([(2,10)], seq_len = 1592, folder = trainer.results_folder, num_processes = 4, time_resolution = 50, ylim = (-3, 7), dpi = 20)
+# diffusion.sample_gif([(3,10)], seq_len = 688, folder = trainer.results_folder, num_processes = 4, time_resolution = 50, ylim = (-3, 7), dpi = 20)
+# diffusion.sample_gif([(4,10)], seq_len = 1544, folder = trainer.results_folder, num_processes = 4, time_resolution = 50, ylim = (-3, 7), dpi = 20)
+# diffusion.sample_gif([(5,10)], seq_len = 992, folder = trainer.results_folder, num_processes = 4, time_resolution = 50, ylim = (-3, 7), dpi = 20)
 
 # sampled_seqs = diffusion.sample(samples = samples, seq_length=40)
 # for i, sample in enumerate(samples):

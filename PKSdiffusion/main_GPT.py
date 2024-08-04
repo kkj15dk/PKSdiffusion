@@ -7,7 +7,8 @@ set_seed(seed) # set the random seed
 print("seed set as " + str(seed))
 
 config = GPTConfig(
-    max_len = 1800,
+    max_len = 48,
+    n_classes=2,
 )
 
 model = GPT2(config)
@@ -71,7 +72,7 @@ trainer = Trainer1D(
     dataset = dataset,
     train_batch_size = 32,
     train_lr = 2e-5, # 8e-5,
-    train_num_steps = 30000,         # total training steps
+    train_num_steps = 10000,         # total training steps
     gradient_accumulate_every = 2,    # gradient accumulation steps
     ema_decay = 0.995,                # exponential moving average decay
     amp = True,                       # turn on mixed precision
@@ -82,7 +83,7 @@ trainer = Trainer1D(
     labels_file=labels_file,
     characters=characters,
 )
-# trainer.load("10")
+# trainer.load("9")
 diffusion.visualize_diffusion(next(iter(dataset)), [10*i for i in range(100)], trainer.results_folder, gif = False)
 trainer.train()
 

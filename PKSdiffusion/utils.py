@@ -74,9 +74,11 @@ def plot_dataset(dataset, bins = None):
         plt.clf()
 
 def count_parameters(model):
-    return sum(p.numel() for p in model.parameters() if p.requires_grad)
+    n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f"Model has {n_params} trainable parameters")
+    return n_params
 
-def one_hot_encode(seq, characters = "ACDEFGHIKLMNPQRSTVWY-", max_len = 40):
+def one_hot_encode(seq, characters = "ACDEFGHIKLMNPQRSTVWY-"):
     """
     Given an AA sequence and a string of characters, return its one-hot encoding based on the characters provided.
     """
@@ -132,9 +134,9 @@ def one_hot_decode(tensor, characters = "ACDEFGHIKLMNPQRSTVWY-", cutoff = 0.5): 
     return seq
 
 class MyIterDataset(IterableDataset):
-    def __init__(self, generator_function, seqs, len, characters="ACDEFGHIKLMNPQRSTVWY-", max_len = 40, varying_length = False, varying_length_resolution = 4):
+    def __init__(self, generator_function, samples, len, characters="ACDEFGHIKLMNPQRSTVWY-", max_len = 40, varying_length = False, varying_length_resolution = 4):
         self.generator_function = generator_function
-        self.seqs = seqs
+        self.samples = samples
         self.len = len
         self.characters = characters
         self.max_len = max_len
@@ -143,7 +145,7 @@ class MyIterDataset(IterableDataset):
 
     def __iter__(self):
         # Create a generator object
-        generator = self.generator_function(self.seqs, self.characters, self.max_len, varying_length=self.varying_length, varying_length_resolution=self.varying_length_resolution)
+        generator = self.generator_function(self.samples, self.characters, self.max_len, varying_length=self.varying_length, varying_length_resolution=self.varying_length_resolution)
         for seq, cl in generator:
             yield seq, cl
 
@@ -151,7 +153,7 @@ class MyIterDataset(IterableDataset):
         return self.len
 
 def collate_fn(batch):
-    # Sort the batch in the descending order
+    # Sort the batch in descending order
     sorted_batch = sorted(batch, key=lambda x: x[0].shape[0], reverse=True)
     # Separate sequence and target
     sequences, cls = zip(*sorted_batch)
@@ -171,15 +173,15 @@ def collate_fn(batch):
 
     return sequences_padded, mask, cls
 
-def OHEAAgen(seqs, characters="ACDEFGHIKLMNPQRSTVWY-", length=40, varying_length=False, varying_length_resolution = 4):
+def OHEAAgen(samples, characters="ACDEFGHIKLMNPQRSTVWY-", length=40, varying_length=False, varying_length_resolution = 4):
     # yield from record_gen
     # First adds '-' to the string until length is divisible by varying_length_resolution, then onehotencodes it, then pads it to length, then creates a mask for the padding
-    for seq in seqs:
+    for seq in samples:
         seq, cl = seq
         cl = torch.tensor(cl)
 
         seq = pad_string(seq, length = length, varying_length = varying_length, varying_length_resolution = varying_length_resolution) # varying_length = True, pad to len % 4 == 0
-        seq = one_hot_encode(seq, characters, length)
+        seq = one_hot_encode(seq, characters)
 
         yield seq.float(), cl
 
@@ -224,11 +226,11 @@ def random_aa_seq(n):
         lsseq.append((seq, cl))
     return lsseq
 
-def write_fasta(seqs, filename):
+def write_fasta(samples, filename):
     records = []
     if os.path.exists('test.fa'):
         return
-    for i, (seq, cl) in enumerate(seqs):
+    for i, (seq, cl) in enumerate(samples):
         record = SeqRecord(Seq(seq), id=f"{i}|{cl}", description="")
         records.append(record)
     SeqIO.write(records, filename, "fasta")
@@ -236,30 +238,68 @@ def write_fasta(seqs, filename):
 def load_fasta(aa_file = "NRPSs_mid-1800.fa", label_file = 'labels.json', characters = "ACDEFGHIKLMNPQRSTVWY-", varying_length=False, varying_length_resolution = 4):
     label_dict = json.loads(open(label_file).read())
     train_record_aa = [record for record in SeqIO.parse(aa_file, "fasta")]
-    seqs = []
+    samples = []
     for record in train_record_aa:
         description = record.description.split('|')[-1]
         if description in label_dict:
             seq = str(record.seq)
             cl = label_dict[description]['class']
-            seqs.append((seq, cl))
-    print("There are " + str(len(seqs)) + " sequences in the dataset with correct labeling.")
-    seqs = [seq for seq in seqs if set(seq[0]).issubset(characters)]
-    print("There are " + str(len(seqs)) + " sequences when removing unimplemented amino acids.")
-    seqs = list(set(seqs)) # remove duplicates
-    print("There are " + str(len(seqs)) + " sequences when removing duplicates. This is the final dataset.")
-    random.shuffle(seqs) # shuffle sequences
-    max_len = max([len(seq[0]) for seq in seqs])
-    min_len = min([len(seq[0]) for seq in seqs])
+            samples.append((seq, cl))
+    print("There are " + str(len(samples)) + " sequences in the dataset with correct labeling.")
+    samples = [seq for seq in samples if set(seq[0]).issubset(characters)]
+    print("There are " + str(len(samples)) + " sequences when removing unimplemented amino acids.")
+    # Use a dictionary to remove duplicates and preserve order
+    samples = list(dict.fromkeys(samples))
+    print("There are " + str(len(samples)) + " sequences when removing duplicates. This is the final dataset.")
+    random.shuffle(samples) # shuffle sequences
+    max_len = max([len(seq[0]) for seq in samples])
+    min_len = min([len(seq[0]) for seq in samples])
     print("Max length sequence is: " + str(max_len))
     print("Min length sequence is: " + str(min_len))
     if varying_length:
         max_len = ((max_len + varying_length_resolution - 1) // varying_length_resolution) * varying_length_resolution
         print("Max length sequence is: " + str(max_len) + " after padding to length divisible by " + str(varying_length_resolution) + ".")
 
-    return seqs, max_len
+    return samples, max_len
 
-def pad_string(string, length, padding_value='-', varying_length = False, varying_length_resolution = 4):
+def fasta_to_dataset(aa_file = "NRPSs_mid-1800.fa", label_file = 'labels.json', characters = "ACDEFGHIKLMNPQRSTVWY-", varying_length=True, varying_length_resolution = 8):
+    label_dict = json.loads(open(label_file).read())
+    train_record_aa = [record for record in SeqIO.parse(aa_file, "fasta")]
+    samples = {"id": [], "sequence": [], "class": []}
+    for record in train_record_aa:
+        description = record.description.split('|')[-1]
+        id = record.description.split('|')[0]
+        if description in label_dict:
+            seq = str(record.seq)
+            if not set(seq).issubset(characters):
+                continue
+            cl = label_dict[description]['class']
+            samples["id"].append(id)
+            samples["sequence"].append(seq)
+            samples["class"].append(cl)
+    print("There are " + str(len(samples)) + " sequences in the dataset with correct labeling, using the amino acids in the alphabet.")
+    # Use a dictionary to remove duplicates and preserve order
+    unique_samples = {"id": [], "sequence": [], "class": []}
+    seen_ids = set()
+
+    for i, id in enumerate(samples["id"]):
+        if id not in seen_ids:
+            seen_ids.add(id)
+            unique_samples["id"].append(samples["id"][i])
+            unique_samples["sequence"].append(samples["sequence"][i])
+            unique_samples["class"].append(samples["class"][i])
+    samples = unique_samples
+    print("There are " + str(len(samples)) + " sequences when removing duplicates. This is the final dataset.")
+    max_len = max([len(sample["seq"]) for sample in samples])
+    min_len = min([len(seq[0]) for seq in samples])
+    print("Max length sequence is: " + str(max_len))
+    print("Min length sequence is: " + str(min_len))
+    if varying_length:
+        max_len = ((max_len + varying_length_resolution - 1) // varying_length_resolution) * varying_length_resolution
+        print("Max length sequence is: " + str(max_len) + " after padding to length divisible by " + str(varying_length_resolution) + ".")
+    return samples, max_len
+
+def pad_string(string, length, padding_value='-', varying_length = False, varying_length_resolution = 8):
     """
     Pads or truncates a string to a specified length with a given padding value.
 
@@ -303,12 +343,17 @@ def set_seed(seed: int = 42) -> None:
     np.random.seed(seed)
     random.seed(seed)
     torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
     # When running on the CuDNN backend, two further options must be set
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
     print(f"Random seed set as {seed}")
+
+def seed_worker(worker_id):
+    worker_seed = torch.initial_seed() % 2**32
+    np.random.seed(worker_seed)
+    random.seed(worker_seed)
 
 def CVAEcollate_fn(batch):
     # stack the inputs into a single tensor

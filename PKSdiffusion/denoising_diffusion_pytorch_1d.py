@@ -13,8 +13,10 @@ import torch
 from torch import nn, einsum, Tensor
 import torch.nn.functional as F
 from torch.cuda.amp import autocast
-from torch.optim import Adam
+from torch.optim import AdamW
+from schedulefree import AdamWScheduleFree
 from torch.utils.data import Dataset, DataLoader
+
 
 from einops import rearrange, reduce
 
@@ -26,7 +28,7 @@ from tqdm.auto import tqdm
 from Bio import SeqIO
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
-from utils import one_hot_decode, quick_loss_plot, collate_fn
+from utils import one_hot_decode, quick_loss_plot, collate_fn, seed_worker
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -904,6 +906,8 @@ class GaussianDiffusion1D(nn.Module):
 
         gif_dir = str(folder) + '/' + f'sample_gif_{samples}'
         pngs_dir = str(folder) + '/' + f'sample_gif_{samples}/pngs'
+        if not os.path.exists(gif_dir):
+            os.makedirs(gif_dir)
 
         seqs = one_hot_decode(tensor)
         seq_record_list = [SeqRecord(Seq(seq), id=str('sample'), description=f"class label: {cl[i]} w: {w[i]}") for i, seq in enumerate(seqs)]
@@ -1072,14 +1076,14 @@ class Trainer1D(object):
         # dataset and dataloader
 
         # dl = DataLoader(dataset, batch_size = train_batch_size, shuffle = True, pin_memory = True, num_workers = cpu_count())
-        dl = DataLoader(dataset, collate_fn=collate_fn, batch_size = train_batch_size, pin_memory = True, num_workers = 4) # cpu_count())
+        dl = DataLoader(dataset, collate_fn=collate_fn, batch_size = train_batch_size, pin_memory = True, num_workers = 4, worker_init_fn=seed_worker) # cpu_count())
 
         dl = self.accelerator.prepare(dl)
         self.dl = cycle(dl)
 
         # optimizer
 
-        self.opt = Adam(diffusion_model.parameters(), lr = train_lr, betas = adam_betas)
+        self.opt = AdamWScheduleFree(diffusion_model.parameters(), lr = train_lr, betas = adam_betas)
 
         # for logging results in a folder periodically
 
